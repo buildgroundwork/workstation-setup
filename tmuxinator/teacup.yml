@@ -1,0 +1,14 @@
+name: teacup
+root: ~/projects/redish/teacup
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim
+  - server: SKIP_ROOT_REDIRECT=1 NODE_ENV=development netlify dev
+  - db: psql -d redish
+  - console:
+  - shell:
+

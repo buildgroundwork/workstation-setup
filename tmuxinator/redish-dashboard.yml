@@ -1,0 +1,14 @@
+name: redish-dashboard
+root: ~/projects/redish-dashboard
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim TODO
+  - server: PUBLIC_ENV_SERVER_BASE_URL=https://redish-placemat.ngrok.io yarn start:dev
+  - db: psql -d redish
+  - console:
+  - shell:
+

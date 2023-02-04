@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+tmuxinator start redish-dashboard
+tmuxinator start teacup
+tmuxinator start saucer
+tmuxinator start flatware
+tmuxinator start placemat
+tmuxinator start ngrok
+tmux attach

@@ -1,0 +1,14 @@
+name: saucer
+root: ~/projects/redish/saucer
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim
+  - server: NODE_ENV=development netlify dev
+  - db: psql -d redish
+  - console:
+  - shell:
+

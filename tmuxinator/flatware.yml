@@ -1,0 +1,14 @@
+name: flatware
+root: ~/projects/redish/flatware
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim
+  - server:
+  - db: psql -d redish
+  - console:
+  - shell:
+
