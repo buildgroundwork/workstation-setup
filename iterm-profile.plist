@@ -563,6 +563,8 @@
 	<string>{841, 448}</string>
 	<key>NSNavPanelExpandedStateForSaveMode</key>
 	<true/>
+	<key>NSOverlayScrollersFallBackForAccessoryViews</key>
+	<false/>
 	<key>NSQuotedKeystrokeBinding</key>
 	<string></string>
 	<key>NSRepeatCountBinding</key>
@@ -604,6 +606,8 @@
 		<key>TB Is Shown</key>
 		<integer>1</integer>
 	</dict>
+	<key>NSWindow Frame NSColorPanel</key>
+	<string>0 81 224 278 0 0 2560 1415 </string>
 	<key>NSWindow Frame NSNavPanelAutosaveName</key>
 	<string>859 710 841 470 0 0 2560 1417 </string>
 	<key>NSWindow Frame SUUpdateAlert</key>
@@ -611,7 +615,7 @@
 	<key>NSWindow Frame iTerm Window 0</key>
 	<string>840 405 890 653 0 0 2560 1417 </string>
 	<key>NSWindow Frame iTerm Window 1</key>
-	<string>1011 138 890 653 0 0 2560 1417 </string>
+	<string>1011 138 890 653 0 0 2560 1415 </string>
 	<key>NSWindow Frame iTerm Window 2</key>
 	<string>1280 0 1275 1417 0 0 2560 1417 </string>
 	<key>NSWindow Frame iTerm Window 3</key>
@@ -833,7 +837,7 @@
 				<key>Color Space</key>
 				<string>sRGB</string>
 				<key>Green Component</key>
-				<real>0.1491314172744751</real>
+				<real>0.14910027384757996</real>
 				<key>Red Component</key>
 				<real>1</real>
 			</dict>
@@ -880,9 +884,9 @@
 				<key>Color Space</key>
 				<string>sRGB</string>
 				<key>Green Component</key>
-				<real>0.9268307089805603</real>
+				<real>0.92681378126144409</real>
 				<key>Red Component</key>
-				<real>0.70213186740875244</real>
+				<real>0.70214027166366577</real>
 			</dict>
 			<key>Cursor Text Color</key>
 			<dict>
@@ -1225,11 +1229,11 @@
 				<key>Alpha Component</key>
 				<real>1</real>
 				<key>Blue Component</key>
-				<real>0.73423302173614502</real>
+				<real>0.73422712087631226</real>
 				<key>Color Space</key>
 				<string>sRGB</string>
 				<key>Green Component</key>
-				<real>0.35916060209274292</real>
+				<real>0.35915297269821167</real>
 				<key>Red Component</key>
 				<real>0.0</real>
 			</dict>
@@ -1344,8 +1348,14 @@
 	</dict>
 	<key>NoSyncHaveUsedCopyMode</key>
 	<true/>
+	<key>NoSyncIgnoreSystemWindowRestoration</key>
+	<true/>
 	<key>NoSyncInstallationId</key>
 	<string>A542B8A1-2A93-4863-BD8C-38AFC78D7FCA</string>
+	<key>NoSyncLastOSVersion</key>
+	<string>Version 13.2 (Build 22D49)</string>
+	<key>NoSyncLastSystemPythonVersionRequirement</key>
+	<string>1.17</string>
 	<key>NoSyncLaunchExperienceControllerRunCount</key>
 	<integer>12</integer>
 	<key>NoSyncNeverRemindPrefsChangesLostForFile</key>
@@ -1355,6 +1365,8 @@
 	<key>NoSyncNextAnnoyanceTime</key>
 	<real>601420459.83485103</real>
 	<key>NoSyncOnboardingWindowHasBeenShown</key>
+	<true/>
+	<key>NoSyncOnboardingWindowHasBeenShown34</key>
 	<true/>
 	<key>NoSyncPermissionToShowTip</key>
 	<false/>
@@ -2144,6 +2156,8 @@
 			</dict>
 		</array>
 	</dict>
+	<key>NoSyncRestoreWindowsCount</key>
+	<integer>0</integer>
 	<key>NoSyncSavePanelSavedSettings_SaveProfile</key>
 	<dict>
 		<key>Initial Directory</key>
@@ -2217,7 +2231,7 @@
 	<key>SUHasLaunchedBefore</key>
 	<true/>
 	<key>SULastCheckTime</key>
-	<date>2020-04-23T13:35:36Z</date>
+	<date>2023-02-04T21:40:39Z</date>
 	<key>SUSendProfileInfo</key>
 	<false/>
 	<key>SUUpdateGroupIdentifier</key>
