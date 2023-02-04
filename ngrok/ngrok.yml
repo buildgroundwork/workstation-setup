@@ -1,0 +1,11 @@
+tunnels:
+    redish-dashboard:
+        proto: http
+        addr: 3000
+        hostname: redish-dashboard.ngrok.io
+    redish-placemat:
+        proto: http
+        addr: 3001
+        hostname: redish-placemat.ngrok.io
+version: "2"
+region: us

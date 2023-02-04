@@ -78,6 +78,10 @@ fi
 ~/.tmux/plugins/tpm/bin/install_plugins
 ~/.tmux/plugins/tpm/bin/update_plugins all
 
+# ngrok
+mkdir -p ~/.ngrok2
+ln -sf $DIR/ngrok/ngrok.yml ~/.ngrok2/ngrok.yml
+
 # create directories
 mkdir -p ~/projects
 
