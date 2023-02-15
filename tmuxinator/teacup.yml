@@ -1,5 +1,5 @@
 name: teacup
-root: ~/projects/redish/teacup
+root: ~/projects/teacup
 
 tmux_options: -2
 

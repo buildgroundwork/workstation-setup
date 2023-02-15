@@ -1,5 +1,5 @@
 name: flatware
-root: ~/projects/redish/flatware
+root: ~/projects/flatware
 
 tmux_options: -2
 

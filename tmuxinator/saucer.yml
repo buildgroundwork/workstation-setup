@@ -1,5 +1,5 @@
 name: saucer
-root: ~/projects/redish/saucer
+root: ~/projects/saucer
 
 tmux_options: -2
 
