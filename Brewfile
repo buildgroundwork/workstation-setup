@@ -1,5 +1,3 @@
-tap "homebrew/cask-fonts"
-tap "homebrew/cask-versions"
 tap "heroku/brew"
 tap "pivotal/tap"
 tap "elastic/tap"
