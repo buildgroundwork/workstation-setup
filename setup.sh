@@ -30,10 +30,8 @@ fi
 ln -sf $DIR/update.sh $HOMEBREW_DIR/bin/workstation-update
 
 # ruby
-rbenv install --skip-existing 3.1.3
-rbenv install --skip-existing 3.2.0
-rbenv install --skip-existing 3.2.1
-rbenv global 3.2.1
+rbenv install --skip-existing 3.3.4
+rbenv global 3.3.4
 eval "$(rbenv init -)"
 gem install bundler
 
