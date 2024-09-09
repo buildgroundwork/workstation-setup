@@ -60,14 +60,6 @@ else
   popd
 fi
 
-# Netlify
-npm list --global netlify-cli
-if [ $? -eq 0 ]; then
-  npm upgrade --global netlify-cli
-else
-  npm install --global netlify-cli
-fi
-
 # tmux
 export TMUX_PLUGIN_MANAGER_PATH=~/.tmux/plugins/
 ln -sf $DIR/tmux.conf ~/.tmux.conf
