@@ -3,7 +3,7 @@ tap "pivotal/tap"
 tap "elastic/tap"
 
 cask "ngrok"
-cask "font-inconsolata-g"
+cask "font-monaspace"
 cask "iterm2"
 cask "postman"
 cask "ccmenu"
