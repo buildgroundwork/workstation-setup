@@ -10,7 +10,6 @@ cask "ccmenu"
 
 brew "awscli"
 brew "bat"
-brew "cowsay"
 brew "eslint"
 brew "fzf"
 brew "git"
