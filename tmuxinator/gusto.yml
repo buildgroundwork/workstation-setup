@@ -1,0 +1,16 @@
+name: Gusto
+root: ~/workspace/zenpayroll
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim
+  - server: bin/server
+  - db: bundle exec rails db
+  - console: bundle exec rails c
+  - shell:
+  # - sidekiq: bundle exec sidekiq
+  # - webpack: bin/webpack-dev-server
+

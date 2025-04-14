@@ -45,7 +45,7 @@ $ ./setup.sh
 - PostgreSQL
 - ripgrep
   Fast text search replacement for ack and ag.
-- rbenv
+<!-- - rbenv -->
 - node
 - yarn
 - git

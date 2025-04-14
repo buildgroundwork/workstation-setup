@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Gusto
+pushd ~/workspace/config_files
+./setup.sh
+popd
+
 if [[ `uname -m` == 'arm64' ]]; then
   HOMEBREW_DIR="/opt/homebrew"
 else
@@ -30,10 +35,10 @@ fi
 ln -sf $DIR/update.sh $HOMEBREW_DIR/bin/workstation-update
 
 # ruby
-rbenv install --skip-existing 3.3.6
-rbenv install --skip-existing 3.4.1
-rbenv global 3.4.1
-eval "$(rbenv init -)"
+# rbenv install --skip-existing 3.3.6
+# rbenv install --skip-existing 3.4.2
+# rbenv global 3.4.2
+# eval "$(rbenv init -)"
 gem install bundler
 
 # vim
@@ -90,7 +95,7 @@ mkdir -p ~/.config/bat
 ln -sf $DIR/batconfig ~/.config/bat/config
 ln -sf $DIR/authorized_keys ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
-ln -sf $DIR/default-gems $(rbenv root)/default-gems
+# ln -sf $DIR/default-gems $(rbenv root)/default-gems
 ln -sf $DIR/tmuxinator ~/.config
 
 # iTerm2 profile preferences
