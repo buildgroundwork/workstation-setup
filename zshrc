@@ -137,7 +137,7 @@ export BUNDLER_EDITOR='vim'
 export GIT_TOGETHER_NO_SIGNOFF=1
 
 # Use openssl from homebrew when building ruby
-export RUBY_CONFIGURE_OPTS="--with-openssl-dir=$(brew --prefix openssl@1.1)"
+export RUBY_CONFIGURE_OPTS="--with-openssl-dir=$(brew --prefix openssl)"
 
 test -e "${HOME}/.zshrc.local" && source "${HOME}/.zshrc.local"
 
