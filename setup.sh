@@ -91,7 +91,7 @@ ln -sf $DIR/batconfig ~/.config/bat/config
 ln -sf $DIR/authorized_keys ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ln -sf $DIR/default-gems $(rbenv root)/default-gems
-ln -sF $DIR/tmuxinator ~/.config
+ln -sf $DIR/tmuxinator ~/.config
 
 # iTerm2 profile preferences
 defaults import -app iTerm iterm-profile.plist
