@@ -9,7 +9,12 @@
   st = status
   di = diff
   co = checkout
-  ci = commit
+  ci = commit --no-verify
+  nvc = ci
+  cnv = ci
+  committ = ci
+  commitnv = ci
+  kommit = ci
   br = branch
   lg = log --graph
   lup = log @{u}... --left-right --graph
