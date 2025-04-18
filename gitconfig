@@ -3,6 +3,8 @@
   pager = less -FXRS -x2
   commitGraph = true
   whitespace = space-before-tab indent-with-non-tab tab-in-indent trailing-space
+  untrackedCache=true
+  fsmonitor=true
 [alias]
   st = status
   di = diff
