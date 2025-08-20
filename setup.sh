@@ -18,7 +18,7 @@ set -ex
 
 # Homebrew packages
 brew bundle
-brew services restart postgresql@14
+brew services restart postgresql@17
 brew services restart redis
 brew services restart logrotate
 
