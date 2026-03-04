@@ -12,7 +12,7 @@ else
 fi
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd $DIR
+cd "$DIR"
 
 set -ex
 
@@ -35,10 +35,6 @@ fi
 ln -sf $DIR/update.sh $HOMEBREW_DIR/bin/workstation-update
 
 # ruby
-# rbenv install --skip-existing 3.3.6
-# rbenv install --skip-existing 3.4.2
-# rbenv global 3.4.2
-# eval "$(rbenv init -)"
 gem install bundler
 
 # vim
