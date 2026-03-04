@@ -21,7 +21,7 @@
   lum = log origin/main... --left-right --graph
   mup = merge @{u}
   rum = rebase origin/main
-  age = !"for branch in `git branch -r | awk '{print $1}'`; do echo `git log -1 $branch --pretty=format:"%at:%%$branch%%%cr%%%cn%n"`;done | column -t -s'%' | sort -nr | cut -d ':' -f 2"
+  age = !"for branch in `git branch -r | awk '{print $1}'`; do echo `git log -1 $branch --pretty=format:"%ct:%%$branch%%%cr%%%cn%n"`;done | column -t -s'%' | sort -nr | cut -d ':' -f 2"
   rollback = !"git diff origin/main.. --name-only -- db/migrate | sed 's/db\\/migrate\\///g' | sort -r | xargs -I% rake db:migrate:down VERSION=%"
   w = whatchanged
   lall = log --branches --tags --remotes --graph
@@ -53,7 +53,7 @@
 [remote "origin"]
   prune = true
 [include]
-  path = /Users/dev/.git-together
+  path = ~/.git-together
 [pull]
   ff = only
 [checkout]
