@@ -1,5 +1,5 @@
-name: Entity Management
-root: ~/workspace/entity-management
+name: Gusto Pro
+root: ~/workspace/gusto-pro
 
 tmux_options: -2
 

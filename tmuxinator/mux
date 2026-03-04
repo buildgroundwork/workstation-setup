@@ -1,0 +1,11 @@
+#!/bin/bash
+
+tmuxinator start adrs
+tmuxinator start zp
+tmuxinator start web
+tmuxinator start em
+tmuxinator start pro
+tmuxinator start gusto-lift
+tmuxinator start gusto-rebac
+tmuxinator start rebac
+tmux attach
