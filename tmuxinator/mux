@@ -1,4 +1,7 @@
 #!/bin/bash
+set -e
+
+aws sts get-caller-identity &>/dev/null || aws sso login
 
 tmuxinator start adrs
 tmuxinator start zp
