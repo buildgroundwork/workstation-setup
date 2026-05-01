@@ -58,3 +58,6 @@
   ff = only
 [checkout]
   defaultRemote = origin
+[user]
+  name = Adam Milligan
+  email = adam.milligan@gusto.com
