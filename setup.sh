@@ -101,9 +101,6 @@ defaults import -app iTerm iterm-profile.plist
 touch ~/.git-author-template
 git config --global commit.template ~/.git-author-template
 
-# heroku cli
-heroku plugins:install api heroku-builds
-
 # restore git author
 git config --global user.name "$GIT_USER_NAME"
 git config --global user.email $GIT_USER_EMAIL

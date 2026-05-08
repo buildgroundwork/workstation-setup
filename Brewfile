@@ -1,4 +1,3 @@
-tap "heroku/brew"
 tap "pivotal/tap"
 tap "elastic/tap"
 
@@ -12,7 +11,6 @@ brew "awscli"
 brew "bat"
 brew "fzf"
 brew "git"
-brew "heroku"
 brew "jq"
 brew "logrotate"
 brew "openssl"
