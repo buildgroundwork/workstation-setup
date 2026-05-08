@@ -1,0 +1,13 @@
+name: pianobar
+root: ~
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - music:
+      layout: main-vertical
+      panes:
+        - pianobar
+        - claude
