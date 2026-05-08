@@ -1238,11 +1238,11 @@
 			<key>Name</key>
 			<string>Default</string>
 			<key>Non Ascii Font</key>
-			<string>Monaco 12</string>
+			<string>MonaspaceNeon-Regular 16</string>
 			<key>Non-ASCII Anti Aliased</key>
 			<true/>
 			<key>Normal Font</key>
-			<string>Inconsolata-g 18</string>
+			<string>MonaspaceNeon-Regular 16</string>
 			<key>Option Key Sends</key>
 			<integer>0</integer>
 			<key>Prompt Before Closing 2</key>
@@ -2201,7 +2201,7 @@
 		</dict>
 	</dict>
 	<key>PrefsCustomFolder</key>
-	<string>/Users/dev/Documents</string>
+	<string></string>
 	<key>Print In Black And White</key>
 	<true/>
 	<key>PromptOnQuit</key>
