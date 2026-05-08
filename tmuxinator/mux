@@ -5,6 +5,7 @@ aws sts get-caller-identity &>/dev/null || aws sso login
 
 tmuxinator start adrs
 tmuxinator start zp
+tmuxinator start sea-turtle
 tmuxinator start web
 tmuxinator start em
 tmuxinator start pro

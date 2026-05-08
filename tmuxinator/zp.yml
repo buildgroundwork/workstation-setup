@@ -10,7 +10,10 @@ windows:
   - server:
       layout: main-vertical
       panes:
-        - # server started by claude
+        - layout: even-vertical
+          panes:
+            - # zp server started by claude
+            - cd ~/workspace/sea-turtle && ./gradlew run
         - claude "start the server"
   - db: bundle exec rails db
   - console: bundle exec rails c
