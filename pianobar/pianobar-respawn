@@ -1,0 +1,21 @@
+#!/bin/bash
+# Kill the running pianobar process so pianobar-loop respawns it.
+#
+# Use this when:
+#   - audio device changed (headphones plugged/unplugged) and pianobar
+#     is still writing to the old device
+#   - pianobar is wedged on a CLOSED tuner socket and you don't want to
+#     wait for the watchdog
+#   - pianobar is stuck in a modal prompt with buffered keystrokes
+#
+# pianobar-loop's rate limiter still applies (max 5 respawns / 120s),
+# so spamming this will eventually trip it.
+
+pid=$(pgrep -x pianobar | head -1)
+if [[ -z "$pid" ]]; then
+    echo "pianobar not running"
+    exit 1
+fi
+
+kill "$pid"
+echo "killed pianobar pid $pid"

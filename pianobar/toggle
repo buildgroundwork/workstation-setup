@@ -1,0 +1,8 @@
+#!/bin/bash
+echo 'p' > ~/.config/pianobar/ctl
+if grep -q '^▶' /tmp/pianobar_nowplaying 2>/dev/null; then
+    sed -i '' 's/^▶/⏸/' /tmp/pianobar_nowplaying
+else
+    sed -i '' 's/^⏸/▶/' /tmp/pianobar_nowplaying
+fi
+tmux refresh-client -S

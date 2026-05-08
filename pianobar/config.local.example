@@ -1,0 +1,12 @@
+# Per-machine pianobar config — NOT committed.
+# Copy this to config.local and fill in your Pandora credentials.
+# setup.sh will refuse to build the live config without config.local.
+#
+# Recommended: store the password in macOS Keychain and look it up via
+# `security`, so this file never holds the cleartext password.
+#
+#   security add-generic-password -s pianobar -a YOUR_EMAIL -w
+#
+# Then password_command below stays as-is.
+user = your-email@example.com
+password_command = security find-generic-password -s pianobar -a your-email@example.com -w

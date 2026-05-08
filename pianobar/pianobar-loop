@@ -1,0 +1,76 @@
+#!/bin/bash
+# Auto-restarting pianobar wrapper.
+#
+# Pianobar runs in the foreground so it owns the terminal and reads
+# keystrokes directly (q, p, etc).
+#
+# Quit signals (loop exits cleanly):
+#   - userquit event (pianobar 'q' key) writes quit-sentinel
+#   - SIGINT/SIGTERM to the wrapper (Ctrl-C)
+#
+# Restart signal:
+#   - any other pianobar exit (crash, network error, login failure)
+#
+# There is intentionally no automatic wedge-detector. Pianobar's tuner
+# socket is normally CLOSED between playlist fetches and a long song
+# can leave the eventcmd heartbeat stale for many minutes — both signals
+# false-positive often enough to interrupt music mid-song. When pianobar
+# is actually wedged (audio stops, keys ignored), use pianobar-respawn
+# (or the tmux Ctrl-b P K binding) to kick it manually.
+#
+# Rate limiter: if pianobar restarts more than MAX_RESTARTS times within
+# RESTART_WINDOW_SECS, the loop gives up so you notice persistent failure
+# (bad credentials, Pandora outage, missing audio device, etc).
+#
+# Station selection comes from ~/.config/pianobar/state which pianobar
+# updates as you switch stations.
+
+set -u
+
+CFG_DIR="$HOME/.config/pianobar"
+QUIT_SENTINEL="$CFG_DIR/quit-sentinel"
+MAX_RESTARTS=5            # rate limit: bail if we restart this many times...
+RESTART_WINDOW_SECS=120   # ...within this window
+WRAPPER_PID=$$
+restart_history=()
+
+rm -f "$QUIT_SENTINEL"
+
+shutting_down=0
+
+cleanup() {
+    shutting_down=1
+    pkill -P "$WRAPPER_PID" pianobar 2>/dev/null
+    exit 0
+}
+trap cleanup INT TERM
+
+while true; do
+    pianobar
+    pb_exit=$?
+
+    (( shutting_down )) && exit 0
+
+    if [[ -f "$QUIT_SENTINEL" ]]; then
+        rm -f "$QUIT_SENTINEL"
+        echo "[pianobar-loop] clean quit via userquit, exiting"
+        break
+    fi
+
+    now=$(date +%s)
+    restart_history+=("$now")
+    cutoff=$(( now - RESTART_WINDOW_SECS ))
+    pruned=()
+    for ts in ${restart_history[@]+"${restart_history[@]}"}; do
+        (( ts >= cutoff )) && pruned+=("$ts")
+    done
+    restart_history=(${pruned[@]+"${pruned[@]}"})
+
+    if (( ${#restart_history[@]} > MAX_RESTARTS )); then
+        echo "[pianobar-loop] ${#restart_history[@]} restarts in ${RESTART_WINDOW_SECS}s — giving up" >&2
+        exit 1
+    fi
+
+    echo "[pianobar-loop] pianobar exited $pb_exit, restarting in 2s (${#restart_history[@]}/${MAX_RESTARTS} in window)..." >&2
+    sleep 2
+done

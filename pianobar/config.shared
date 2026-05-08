@@ -1,0 +1,6 @@
+# Shared pianobar config — committed.
+# setup.sh substitutes the home placeholder, concatenates config.local,
+# and writes the result to ~/.config/pianobar/config.
+audio_quality = high
+fifo = %HOME%/.config/pianobar/ctl
+event_command = %HOME%/.config/pianobar/eventcmd

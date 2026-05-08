@@ -112,3 +112,6 @@ git config --global user.email $GIT_USER_EMAIL
 
 # logrotate
 ln -sf $DIR/logrotate.d/*.conf $HOMEBREW_DIR/etc/logrotate.d/
+
+# pianobar
+HOMEBREW_DIR="$HOMEBREW_DIR" $DIR/pianobar/setup.sh
