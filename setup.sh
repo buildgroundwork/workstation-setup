@@ -86,6 +86,8 @@ cp -f $DIR/gitconfig ~/.gitconfig
 ln -sf $DIR/.git-together ~/.git-together
 ln -sf $DIR/.gitignore_global ~/.gitignore_global
 ln -sf $DIR/vimrc.local ~/.vimrc.local
+mkdir -p ~/.claude
+ln -sf $DIR/claude/CLAUDE.md ~/.claude/CLAUDE.md
 ln -sf ~/.rails/railsrc ~/.railsrc
 mkdir -p ~/.config/bat
 ln -sf $DIR/batconfig ~/.config/bat/config
