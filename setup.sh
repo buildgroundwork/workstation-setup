@@ -91,6 +91,9 @@ ln -sf $DIR/claude/CLAUDE.md ~/.claude/CLAUDE.md
 # Personal skills are repo-managed; -n replaces the existing symlink on
 # re-runs instead of nesting a link inside it.
 ln -sfn $DIR/claude/skills ~/.claude/skills
+# settings.json is shared config; the secret-bearing env stays in the
+# untracked settings.local.json alongside it.
+ln -sf $DIR/claude/settings.json ~/.claude/settings.json
 ln -sf ~/.rails/railsrc ~/.railsrc
 mkdir -p ~/.config/bat
 ln -sf $DIR/batconfig ~/.config/bat/config
