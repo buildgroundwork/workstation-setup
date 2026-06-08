@@ -1,0 +1,15 @@
+name: Hub
+root: ~/workspace
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim
+  - shell:
+  - shell:
+  - shell:
+  - shell:
+  - shell:
+  - claude: claude --resume hub

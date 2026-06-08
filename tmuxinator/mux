@@ -3,6 +3,7 @@ set -e
 
 aws sts get-caller-identity &>/dev/null || aws sso login
 
+tmuxinator start hub
 tmuxinator start adrs
 tmuxinator start claude-code
 tmuxinator start zp
