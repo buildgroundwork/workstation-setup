@@ -88,6 +88,9 @@ ln -sf $DIR/.gitignore_global ~/.gitignore_global
 ln -sf $DIR/vimrc.local ~/.vimrc.local
 mkdir -p ~/.claude
 ln -sf $DIR/claude/CLAUDE.md ~/.claude/CLAUDE.md
+# Personal skills are repo-managed; -n replaces the existing symlink on
+# re-runs instead of nesting a link inside it.
+ln -sfn $DIR/claude/skills ~/.claude/skills
 ln -sf ~/.rails/railsrc ~/.railsrc
 mkdir -p ~/.config/bat
 ln -sf $DIR/batconfig ~/.config/bat/config
