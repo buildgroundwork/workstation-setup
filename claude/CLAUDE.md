@@ -38,6 +38,8 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 
 - **Watch the related deferential tics:** "Asking because…", "Just wanted to understand…", "To make sure I understand…". Same shape. Default to declarative forms ("I ask because…", or just state the reason) unless genuine uncertainty or gratitude is the point.
 
+- **Don't overuse em dashes.** Em dashes are an LLM tell; readers increasingly read em-dash-heavy text as machine-written, which undermines the voice of anything Adam puts his name on. Prefer commas, parentheses, colons, or sentence breaks. Reserve em dashes for cases where no other punctuation fits. Applies to every draft I produce for Adam to send or post (Slack messages, doc comments, PR replies, emails, ADR prose). Doesn't apply to code comments or to my own user-facing chat responses in this CLI.
+
 ## Git workflow
 
 - **Branch off `origin/main`** (the remote tip), not local `main`, so the branch starts from current content. Set upstream tracking explicitly to the new branch on first push (an explicit refspec) rather than letting it default to `main`.
@@ -49,6 +51,7 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 - **Replant branches with `git rebase --onto`**, not reset + cherry-pick.
 - **After resolving merge/cherry-pick conflicts, `git reset HEAD <file>`** (not `git add`) so the resolution can be reviewed with `git add -p`.
 - **Cherry-pick** with `--continue --no-edit` to preserve authorship, then `git commit --amend` if the message needs revising.
+- **Don't reset or restage the index mid-session** — Adam runs `git add -p` / interactive staging in parallel. A populated or partially-staged (`MM`) index is likely *his* deliberate staging, not a mess to clean up. Only stage/commit the specific files you created or were asked to handle; never broad-reset files you didn't stage. If unsure whose staging it is, ask.
 
 ## Commit messages
 
@@ -70,11 +73,12 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 - **Specs exercise the public interface only.** Don't expose internal state for testability — either the behavior is invisible (skip the test) or the interface is wrong (fix it).
 
 **Ruby idioms**
-- `class << self` over repeated `def self.` for multiple class methods.
+- `class << self` over repeated `def self.` for class methods — it groups them and, crucially, makes `private` actually apply (a `private` keyword does nothing to `def self.` singleton methods; they stay public). A stateless operation-set is a legitimate module with `class << self` (like `JSON`/`Base64`); reach for an instantiable class only when there's instance state to encapsulate.
 - Duck typing over `is_a?` / `kind_of?` type checks — let interfaces define what callers can pass.
 - Endless method syntax (`def foo = expr`) for single-expression bodies.
 - Never block-form `unless` — use modifier form, an early return, or restructure.
 - Public methods read as intent by delegating to named private methods ("sergeant methods"); extract for readability, not just DRY. Suffix `!` for methods that raise.
+- **Three Rails environments only**: development, test, production. Every deployed environment (staging, demo, QA) runs as `production` and differs by config, not by a distinct `Rails.env` — 12-factor. Use `Rails.env.local?` for "local box" (dev or test), not `!Rails.env.production?` or a `%w[development test]` allowlist. There is no `staging?`; staging *is* production. A deployed environment that needs local-only behavior gets an explicit opt-in flag, never a `Rails.env` branch.
 
 **Sorbet** (Adam's pragmatic stance — note this diverges from the broader Gusto default)
 - Sorbet earns its keep on public value-class boundaries and catching real bugs; don't spread sigs everywhere by default.
@@ -91,3 +95,14 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 - **A repo's `.claude/skills/` is plugin-managed and clobbered** — the marketplace plugin deletes skills not in its manifest. Put personal skills in `~/.claude/skills/`, never in a repo's `.claude/skills/`.
 - **`.claude/settings.json` changes don't take effect mid-session** — a restart is required. Don't claim a settings/permission fix applies immediately.
 - **Don't write source files via Bash heredoc** — use the Edit/Write tools so file state and diffs are tracked by the harness.
+- **View files with the Read tool, never shell viewers** (`sed`/`cat`/`head`/`tail`/`git show <ref>:<path>`). `sed` isn't on the allowlist, so even read-only `sed -n` trips a permission prompt every time. For a committed version that differs from the working tree, check out the branch and Read the working file. Applies to sub-agent prompts too — tell them to Read working-tree files, not `git show`.
+- **`claude --resume <name>` resumes a session by its display name** (set via `-n`/`--name`). Adam relies on this from the CLI; don't claim it needs a session ID despite what `--help` implies.
+
+## Memory routing (global vs. project)
+
+Memory files are keyed per-project (`~/.claude/projects/<cwd>/memory/`), so a fact saved in one repo is invisible in others. Before saving a memory, classify its scope by asking: **would a session in a *different* repo benefit from this?**
+
+- **Yes → it's global.** Don't bury it in project memory where it'll be re-learned repo by repo. Propose adding it to this file (`~/.claude/CLAUDE.md`) instead — surface the proposed wording and let me apply it, since this file is hand-curated and version-controlled. Global = working style, tool/CLI facts, cross-project habits, communication preferences.
+- **No → it's project-specific.** Save it as per-project memory as usual. Project = this repo's state, phase/status, local quirks, who-owns-what here.
+
+When unsure, ask which scope I want rather than defaulting to project memory.
