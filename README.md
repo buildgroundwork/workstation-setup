@@ -76,9 +76,6 @@ $ ./setup.sh
 - .git-together
 - .git-author-template
 
-### Pianobar
-Auto-restarting pianobar wrapper, watchdog, and tmux integration. See [`pianobar/README.md`](pianobar/README.md) for setup details, including the per-machine `pianobar/config.local` (gitignored) you'll need to create on first install.
-
 ## Notes
 
 To update iTerm preferences:

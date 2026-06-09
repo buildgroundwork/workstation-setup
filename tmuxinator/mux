@@ -15,5 +15,4 @@ tmuxinator start gusto-lift
 tmuxinator start gusto-eventing
 tmuxinator start gusto-rebac
 tmuxinator start rebac
-tmuxinator start pianobar
 tmux attach
