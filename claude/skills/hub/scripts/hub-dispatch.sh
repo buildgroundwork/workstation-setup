@@ -80,6 +80,24 @@ cmd_send() {
   tmux send-keys -t "$target" -l "$prompt"
   sleep 0.3
   tmux send-keys -t "$target" Enter
+  # Mark the dispatched pane as awaiting a result (kind: task.dispatched), so
+  # the dashboard and popup show it as in-flight and the finish-detection Stop
+  # hook can later flip it to task.ready. Best-effort: arming must never break a
+  # dispatch, so a missing plugin or a resolve failure is silently ignored.
+  _arm_target "$target" "$prompt" || true
+}
+
+# Resolve the claude-tmux-attention state script (its install path is
+# version-stamped, so find it rather than hardcode), and arm the target pane.
+# Returns non-zero (caller ignores) if the plugin isn't installed.
+_arm_target() {
+  local target="$1" prompt="$2" state_script pane
+  state_script=$(find "$HOME/.claude/plugins/cache" -name attention-state.sh -path '*claude-tmux-attention*' 2>/dev/null | sort | tail -1)
+  [[ -n "$state_script" && -x "$state_script" ]] || return 1
+  # arm keys by tmux pane id; resolve the target window's active pane.
+  pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 1
+  [[ -n "$pane" ]] || return 1
+  "$state_script" arm "$pane" "$prompt" >/dev/null 2>&1
 }
 
 cmd_go() {
