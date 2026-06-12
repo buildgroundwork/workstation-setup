@@ -54,6 +54,10 @@
   prune = true
 [include]
   path = ~/.git-together
+[include]
+  # Machine-local settings (commit signing, author template). Not committed —
+  # signing key path is per-machine; written by scope doctor / manual setup.
+  path = ~/.gitconfig.local
 [pull]
   ff = only
 [checkout]
