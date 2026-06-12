@@ -74,7 +74,11 @@ cmd_send() {
   prompt=$(cat)
   [[ -n "$prompt" ]] || err "empty prompt; nothing to send"
   # Send the text literally, then Enter as a separate key event so it submits.
+  # A long prompt arrives as a bracketed paste; if the Enter follows too
+  # quickly it lands *inside* the paste buffer instead of submitting. Pause so
+  # the paste settles, then send Enter as its own keystroke.
   tmux send-keys -t "$target" -l "$prompt"
+  sleep 0.3
   tmux send-keys -t "$target" Enter
 }
 
