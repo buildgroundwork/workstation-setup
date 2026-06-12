@@ -64,6 +64,18 @@
     "figma@claude-plugins-official": true,
     "ruby-lsp@claude-plugins-official": true
   },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/hub/scripts/hub-stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  },
   "alwaysThinkingEnabled": false,
   "effortLevel": "high",
   "tui": "default",
