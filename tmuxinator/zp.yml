@@ -22,6 +22,8 @@ windows:
       panes:
         -
         - claude
+  - shell2:
+  - claude: claude --continue
   # - sidekiq: bundle exec sidekiq
   # - webpack: bin/webpack-dev-server
 
