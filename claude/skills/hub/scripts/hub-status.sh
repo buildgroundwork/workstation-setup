@@ -25,9 +25,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WINDOW_TOKENS="${HUB_CONTEXT_WINDOW:-1000000}"   # opus 1m context
-WORKING_MIN=3                                    # transcript touched <= this => working
-COLD_MIN=1440                                    # transcript untouched > this => cold (24h)
+WINDOW_TOKENS="${HUB_CONTEXT_WINDOW:-1000000}"      # opus 1m context
+WORKING_MIN="${HUB_WORKING_MIN:-60}"                # transcript touched <= this (min) => working. Default 1h: "sessions I'm working on today", not "generating right now". Tune via HUB_WORKING_MIN.
+COLD_MIN="${HUB_COLD_MIN:-1440}"                    # transcript untouched > this (min) => cold (24h)
+MAX_LINES="${HUB_MAX_LINES:-12}"                    # pane never grows past this; working rows past the budget fold to "+N more working"
 PROJECTS_DIR="$HOME/.claude/projects"
 STATE_SCRIPT="$(find "$HOME/.claude" "$HOME/workspace/claude-code" -name attention-state.sh 2>/dev/null | head -1)"
 
@@ -131,26 +132,45 @@ render() {
   total=$(printf '%s\n' "$rows" | grep -c .)
   clock=$(date '+%H:%M')
 
-  printf ' HUB · %s live · %s\n' "$total" "$clock"
+  # Build the idle and cold summary lines first — each is 0 or 1 line — so the
+  # working rows know how much of the MAX_LINES budget is left for them.
+  local idle coldn idle_line="" cold_line=""
+  idle=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="idle"{printf "%s · ",$1}' | sed 's/ · $//')
+  [[ -n "$idle" ]] && idle_line=$(printf ' ○ idle: %s' "$idle")
+  # Cold sessions fold to a bare count — the names are low-signal ("these exist,
+  # ignore them") and a long name list wraps in a narrow pane, eating rows the
+  # height calc doesn't account for. The count carries what matters.
+  coldn=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="cold"' | grep -c .)
+  (( coldn > 0 )) && cold_line=$(printf ' ◌ cold (%s)' "$coldn")
 
   # Active rows (working/waiting/dispatched/ready), context-heavy first.
-  printf '%s\n' "$rows" \
+  local active
+  active=$(printf '%s\n' "$rows" \
     | awk -F'\t' '$4!="idle" && $4!="cold"' \
     | sort -t$'\t' -k4,4 -k2,2rn \
     | while IFS=$'\t' read -r name pct age state; do
         printf ' %s %-18s %3s%% %s\n' "$(icon "$state")" "$name" "$pct" "$(bar "$pct")"
-      done
+      done)
+  local active_n; active_n=$(printf '%s\n' "$active" | grep -c .)
 
-  # Idle: one summary line.
-  local idle
-  idle=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="idle"{printf "%s · ",$1}' | sed 's/ · $//')
-  [[ -n "$idle" ]] && printf ' ○ idle: %s\n' "$idle"
+  # Budget: MAX_LINES minus header(1) minus idle/cold lines = room for active
+  # rows. If active rows overflow, show (budget - 1) and a "+N more working".
+  local reserved=1
+  [[ -n "$idle_line" ]] && reserved=$((reserved + 1))
+  [[ -n "$cold_line" ]] && reserved=$((reserved + 1))
+  local budget=$((MAX_LINES - reserved))
+  (( budget < 1 )) && budget=1
 
-  # Cold: folded to a count plus names.
-  local coldnames coldn
-  coldnames=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="cold"{printf "%s · ",$1}' | sed 's/ · $//')
-  coldn=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="cold"' | grep -c .)
-  (( coldn > 0 )) && printf ' ◌ cold (%s): %s\n' "$coldn" "$coldnames"
+  printf ' HUB · %s live · %s\n' "$total" "$clock"
+  if (( active_n > budget )); then
+    local shown=$((budget - 1))
+    printf '%s\n' "$active" | head -n "$shown"
+    printf ' … +%s more working\n' "$((active_n - shown))"
+  else
+    [[ -n "$active" ]] && printf '%s\n' "$active"
+  fi
+  [[ -n "$idle_line" ]] && printf '%s\n' "$idle_line"
+  [[ -n "$cold_line" ]] && printf '%s\n' "$cold_line"
 }
 
 # --loop[=N]: clear-and-redraw every N seconds until killed. Render to a buffer
@@ -166,6 +186,16 @@ main() {
       tput civis 2>/dev/null || true
       while :; do
         local frame; frame=$(render)
+        # Resize our own pane to fit the frame (grow and shrink), capped at
+        # MAX_LINES. Only when running inside tmux with a known pane. The list
+        # changes mainly when Adam interacts with a session, so this rarely
+        # fires mid-keystroke. Resize before drawing so the frame fills it.
+        if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
+          local want; want=$(printf '%s\n' "$frame" | grep -c .)
+          (( want > MAX_LINES )) && want=$MAX_LINES
+          (( want < 1 )) && want=1
+          tmux resize-pane -t "$TMUX_PANE" -y "$want" 2>/dev/null || true
+        fi
         clear
         printf '%s\n' "$frame"
         sleep "$interval"

@@ -25,13 +25,26 @@ find_pane() {
     | awk -v t="$TAG" '$2==t{print $1; exit}'
 }
 
+# Max pane height — must match hub-status.sh's MAX_LINES so the initial open
+# matches the loop's own cap.
+MAX_LINES="${HUB_MAX_LINES:-12}"
+
 cmd_open() {
-  local height="${1:-6}" interval="${2:-5}"
+  local height="${1:-}" interval="${2:-5}"
   local existing; existing=$(find_pane)
   [[ -n "$existing" ]] && { printf 'dashboard already open (%s)\n' "$existing"; return 0; }
 
-  # Split a small pane below, tag it, and run the loop there. -d keeps focus in
-  # the working pane so the dashboard doesn't steal the cursor.
+  # If no height given, fit it to the current dashboard content (capped at
+  # MAX_LINES) so it opens right-sized instead of flashing at a fixed height
+  # until the loop's first resize. The loop keeps it fitted from there.
+  if [[ -z "$height" ]]; then
+    height=$("$STATUS" --once 2>/dev/null | grep -c .)
+    (( height > MAX_LINES )) && height=$MAX_LINES
+    (( height < 1 )) && height=1
+  fi
+
+  # Split a pane below, tag it, and run the loop there. -d keeps focus in the
+  # working pane so the dashboard doesn't steal the cursor.
   local pane
   pane=$(tmux split-window -v -l "$height" -d -P -F '#{pane_id}' \
     "exec '$STATUS' --loop=$interval")
