@@ -30,6 +30,8 @@ Two scripts under this skill's `scripts/` dir do all tmux interaction. Prefer th
   - `go <target>` → switches the active tmux client to that window (navigate / hand off).
   - `capture <target>` → prints the visible pane contents (for read-back).
   - `ready` → lists dispatched panes by state: which have **finished** (`task.ready` — the Stop hook flipped them) vs. still **in-flight** (`task.dispatched`), with each pane's `session:window` and original prompt. The read-side of dispatch.
+- **`scripts/hub-wait.sh <target> [timeout]`** — blocks until a dispatched pane finishes (flips to `task.ready`), then prints its settled contents. Polls the state file in a cheap shell loop (not Claude's context), so it's the babysitting primitive for multi-step orchestration. Exit 0 = finished (+ capture), 2 = timeout, 3 = pane wasn't an armed dispatch.
+- **`scripts/hub-stop-hook.sh`** — the personal `Stop` hook (wired in global `~/.claude/settings.json`, not invoked directly): when a session stops, flips its pane `task.dispatched` → `task.ready` if armed, else no-ops. This is what makes finish-detection work.
 
 ## Behaviors
 
@@ -53,6 +55,19 @@ A natural driver: run `/today` first, let its priorities suggest what to dispatc
 
 Run `hub-dispatch.sh ready`. It lists dispatched panes split by state — `task.ready` (finished, results waiting) vs. `task.dispatched` (still working) — each with its `session:window` and the prompt it was given. Present it concisely: which dispatches have finished and are worth reading back, which are still in flight. For a finished one, offer to read it back (`capture`) or navigate there (`go`). This is the payoff of the finish-detection layer: the hub knows *when* a dispatched session is done without parsing its TUI.
 
+### Orchestrate — "run this task in <repo> and watch it", "dispatch and babysit", multi-step delegation
+
+For a task that's more than one dispatch — where you want to send a prompt, wait for it to finish, read the result, and decide whether to send a follow-up — the hub runs a **delegation loop**. The hub session (this Claude) holds the task; the waiting is done cheaply by `hub-wait.sh`, not by burning turns polling.
+
+The loop, per dispatched step:
+
+1. **Dispatch** the step (gated as always — show Adam the prompt + target, get OK, then `send`). `send` arms the pane.
+2. **Wait** with `hub-wait.sh <target> [timeout]`. It blocks until the pane flips to `task.ready` and prints the settled pane contents. Run it so you get control back when the step finishes (background it or let it block between turns); don't sit in a Claude polling loop.
+3. **Read + decide.** From the captured result, decide: task done → report back to Adam; needs a follow-up → formulate the next prompt and **re-confirm with Adam before sending it** (every `send` stays gated, even mid-orchestration — a follow-up prompt is still injecting a turn into a real session).
+4. Repeat until the task is complete, then summarize the whole arc for Adam.
+
+Keep Adam in the loop: he sees each prompt before it's sent, and you report the result of each step. The orchestrator removes the *waiting* and the *plumbing*, not Adam's oversight of *what gets said*.
+
 ### Read back — "what did <repo> come back with?", "read me <repo>"
 
 Resolve the target, run `hub-dispatch.sh capture <target>`, and summarize the relevant part (usually the latest assistant response). The pane has settled by the time Adam asks, so the capture is clean. Offer to navigate him there if he wants to continue hands-on.
@@ -73,6 +88,6 @@ Resolve the target and run `hub-dispatch.sh go <target>`. This hands Adam into t
 
 When `send` dispatches, it arms the target pane as `task.dispatched` (via `claude-tmux-attention`'s `arm`). A personal `Stop` hook (`scripts/hub-stop-hook.sh`, wired in global `~/.claude/settings.json`) fires when *any* session stops; if the stopping pane was armed, it flips `task.dispatched` → `task.ready`. The `ready` subcommand reads those facts back. The `Stop` hook lives in the personal layer, not the shipped plugin — it no-ops unless a pane was armed, so it costs other marketplace users nothing. See `~/workspace/claude-code/plans/attention-core-split-and-hub.md`.
 
-## Future (not yet built)
+## Orchestration (built)
 
-- **Long-lived dispatch orchestrator** — a persistent hub task-runner that owns a whole task: dispatches a prompt, waits on `task.ready` to babysit (no polling), dispatches follow-ups, and reports back. NOT a subagent (those are synchronous/bounded). Now unblocked by the finish-detection layer above.
+The "Orchestrate" behavior above is the long-lived dispatch task-runner: the hub session owns a multi-step task and drives dispatch → `hub-wait.sh` → read → decide → (gated) follow-up, reporting back at the end. It is deliberately **not** a subagent — subagents are synchronous and bounded, and would burn context polling a pane for the duration; the persistent hub session plus the cheap shell-level `hub-wait` is the right shape. Adam's per-`send` confirmation is preserved throughout.
