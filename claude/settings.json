@@ -41,6 +41,8 @@
       "Bash(mise ls *)",
       "Bash(mise ls-remote *)",
       "Bash(bktide *)",
+      "Bash(bash ~/.claude/skills/hub/scripts/*)",
+      "Bash(~/.claude/skills/hub/scripts/*)",
       "mcp__claude_ai_Gdrive_Gusto__create_file"
     ],
     "ask": [
