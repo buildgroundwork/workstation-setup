@@ -147,6 +147,30 @@ cmd_capture() {
   local target="${1:?usage: capture <target>}"
   tmux list-panes -t "$target" >/dev/null 2>&1 || err "target not found: $target"
   tmux capture-pane -t "$target" -p
+  # Reading the pane back is the consume step that closes the dispatch
+  # lifecycle: dispatched -> ready -> (read) -> cleared. Without this, a
+  # finished dispatch's task.ready row lingers in the shared state file and the
+  # plugin's attention popup/status-line surface it as a phantom "needs
+  # attention". Clear ONLY a task.ready row for this pane — never a live
+  # attention.needed (a genuinely-blocked pane Adam is just looking at must
+  # keep its real attention signal). Best-effort; never fails the capture.
+  _clear_ready "$target" || true
+}
+
+# Remove this target's task.ready row (consumed-dispatch cleanup), but only if
+# that's what the pane has — leave attention.needed and task.dispatched alone.
+_clear_ready() {
+  local target="$1" state_script pane kinds
+  state_script=$(_state_script) || return 0
+  pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 0
+  [[ -n "$pane" ]] || return 0
+  kinds=$("$state_script" list 2>/dev/null | jq -r --arg p "$pane" \
+    '[ .[] | select(.tmux_pane == $p) | .kind ] | join(" ")' 2>/dev/null)
+  # Only clear when the pane's sole/relevant signal is a finished dispatch.
+  case " $kinds " in
+    *" attention.needed "*) return 0 ;;                 # real attention — keep it
+    *" task.ready "*) "$state_script" remove-by-pane "$pane" >/dev/null 2>&1 ;;
+  esac
 }
 
 main() {

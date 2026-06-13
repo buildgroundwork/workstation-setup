@@ -62,7 +62,7 @@ For a task that's more than one dispatch — where you want to send a prompt, wa
 The loop, per dispatched step:
 
 1. **Dispatch** the step (gated as always — show Adam the prompt + target, get OK, then `send`). `send` arms the pane.
-2. **Wait** with `hub-wait.sh <target> [timeout]`. It blocks until the pane flips to `task.ready` and prints the settled pane contents. Run it so you get control back when the step finishes (background it or let it block between turns); don't sit in a Claude polling loop.
+2. **Wait** with `hub-wait.sh <target> [timeout]`. It blocks, then returns when the step **finishes** (exit 0, prints the settled pane) — or **blocks on its own permission prompt** (exit 4: the dispatched session hit a permission it doesn't have; tell Adam to approve in that pane, then re-wait) — or **times out** (exit 2). Run it so you get control back at any of those (background it or let it block between turns); don't sit in a Claude polling loop. Exit 4 is common for real tasks — a dispatched session that needs to run a not-allowlisted command will stop and ask; surface that to Adam rather than waiting blind.
 3. **Read + decide.** From the captured result, decide: task done → report back to Adam; needs a follow-up → formulate the next prompt and **re-confirm with Adam before sending it** (every `send` stays gated, even mid-orchestration — a follow-up prompt is still injecting a turn into a real session).
 4. Repeat until the task is complete, then summarize the whole arc for Adam.
 

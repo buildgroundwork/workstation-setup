@@ -8,10 +8,17 @@
 #       <target>  "<session>:<window>" of a pane previously armed by `send`.
 #       timeout   max seconds to wait (default 1800 = 30 min). 0 = no timeout.
 #
-# Exits 0 and prints the settled pane contents (a clean capture, since the
-# session has stopped) when the pane reaches task.ready. Exits 2 on timeout,
-# 3 if the pane was never armed / not found in the state file. Polls the state
-# file, not the pane's TUI — the finish signal is the Stop-hook flip, not
+# Exit codes:
+#   0  finished — pane reached task.ready; prints the settled pane contents.
+#   2  timed out before finishing or blocking.
+#   3  pane was never armed / not found in the state file.
+#   4  BLOCKED — the dispatched session hit its own permission prompt (an
+#      attention.needed row appeared for the pane). It can't proceed without
+#      the user approving in that pane, so return early instead of waiting to
+#      timeout, and print the pane so the user can see the ask.
+#
+# Polls the state file, not the pane's TUI — both signals (the Stop-hook
+# task.ready flip and the plugin's attention.needed) are facts in the file, not
 # screen-scraping. Designed to be backgrounded or run between hub turns.
 
 set -euo pipefail
@@ -30,35 +37,49 @@ pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) \
   || err "target not found: $target"
 [[ -n "$pane" ]] || err "could not resolve pane for: $target"
 
-# Read this pane's current kind from the state file. Empty if no row.
-pane_kind() {
-  [[ -f "$STATE_FILE" ]] || return 0
+# Classify this pane's state from the state file, by its rows (matched on
+# tmux_pane). A blocked dispatch can carry BOTH a task.dispatched row and an
+# attention.needed row, so check kinds explicitly rather than taking the last
+# row. Prints: ready | blocked | dispatched | none.
+#   - any task.ready row              -> "ready"     (finished)
+#   - any attention.needed row        -> "blocked"   (hit a permission prompt)
+#   - any task.dispatched row         -> "dispatched"(still working)
+#   - otherwise                       -> "none"
+pane_state() {
+  [[ -f "$STATE_FILE" ]] || { echo none; return; }
   jq -r --arg p "$pane" '
-    (map(select(.tmux_pane == $p)) | last | .kind) // ""
+    [ .[] | select(.tmux_pane == $p) | .kind ] as $kinds
+    | if   ($kinds | index("task.ready"))       then "ready"
+      elif ($kinds | index("attention.needed")) then "blocked"
+      elif ($kinds | index("task.dispatched"))  then "dispatched"
+      else "none" end
   ' "$STATE_FILE" 2>/dev/null
 }
 
-# Must be armed (dispatched) or already ready when we start — otherwise there's
-# nothing to wait on (the caller dispatched to the wrong pane, or never armed).
-start_kind=$(pane_kind)
-case "$start_kind" in
-  task.ready) ;;                      # already done; fall through to capture
-  task.dispatched) ;;                 # the normal case; wait for the flip
-  *) printf 'pane %s (%s) is not an armed dispatch (kind=%s)\n' \
-       "$pane" "$target" "${start_kind:-none}" >&2; exit 3 ;;
+# Must be a live dispatch when we start (armed, ready, or already blocked) —
+# otherwise there's nothing to wait on (wrong pane, or never armed).
+case "$(pane_state)" in
+  ready|dispatched|blocked) ;;
+  *) printf 'pane %s (%s) is not an armed dispatch\n' "$pane" "$target" >&2; exit 3 ;;
 esac
 
-# Poll until task.ready or timeout.
+# Poll until the pane finishes (ready), blocks on its own prompt, or times out.
 elapsed=0
-while [[ "$(pane_kind)" != "task.ready" ]]; do
+while :; do
+  case "$(pane_state)" in
+    ready)
+      # Finished. Session stopped, so the pane is settled — capture is clean.
+      tmux capture-pane -t "$target" -p 2>/dev/null
+      exit 0 ;;
+    blocked)
+      printf 'BLOCKED: %s is waiting on its own permission prompt — approve in that pane, then re-wait.\n' "$target" >&2
+      tmux capture-pane -t "$target" -p 2>/dev/null
+      exit 4 ;;
+  esac
   (( timeout > 0 && elapsed >= timeout )) && {
-    printf 'timed out after %ss waiting for %s to finish\n' "$timeout" "$target" >&2
+    printf 'timed out after %ss waiting for %s\n' "$timeout" "$target" >&2
     exit 2
   }
   sleep "$interval"
   elapsed=$((elapsed + interval))
 done
-
-# Finished. The session has stopped, so the pane is settled — capture is clean.
-tmux capture-pane -t "$target" -p 2>/dev/null
-exit 0
