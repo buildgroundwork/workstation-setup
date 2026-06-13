@@ -20,8 +20,15 @@
 #   capture <target>
 #       Print the visible contents of <target>'s pane (for read-back).
 #
+#   ready
+#       List dispatched panes by state — which have FINISHED (task.ready, the
+#       Stop hook flipped them) vs. still in-flight (task.dispatched). The
+#       read-side payoff of `send` arming the pane. One line per pane:
+#       "<kind>\t<session>:<window>\t<prompt>".
+#
 # A "target" is "<session>:<window>"; send/capture operate on that window's
-# active pane. Pure-navigation and capture are read-ish; only `send` types.
+# active pane. Pure-navigation, capture, and ready are read-ish; only `send`
+# types.
 
 set -euo pipefail
 
@@ -87,17 +94,44 @@ cmd_send() {
   _arm_target "$target" "$prompt" || true
 }
 
-# Resolve the claude-tmux-attention state script (its install path is
-# version-stamped, so find it rather than hardcode), and arm the target pane.
-# Returns non-zero (caller ignores) if the plugin isn't installed.
+# Resolve the claude-tmux-attention state script. Its install path is
+# version-stamped, so find it rather than hardcode; prints the path, or empty
+# (return 1) if the plugin isn't installed.
+_state_script() {
+  local s
+  s=$(find "$HOME/.claude/plugins/cache" -name attention-state.sh -path '*claude-tmux-attention*' 2>/dev/null | sort | tail -1)
+  [[ -n "$s" && -x "$s" ]] || return 1
+  printf '%s' "$s"
+}
+
+# Arm the target pane (kind: task.dispatched). Returns non-zero (caller
+# ignores) if the plugin isn't installed or the pane can't be resolved.
 _arm_target() {
   local target="$1" prompt="$2" state_script pane
-  state_script=$(find "$HOME/.claude/plugins/cache" -name attention-state.sh -path '*claude-tmux-attention*' 2>/dev/null | sort | tail -1)
-  [[ -n "$state_script" && -x "$state_script" ]] || return 1
+  state_script=$(_state_script) || return 1
   # arm keys by tmux pane id; resolve the target window's active pane.
   pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 1
   [[ -n "$pane" ]] || return 1
   "$state_script" arm "$pane" "$prompt" >/dev/null 2>&1
+}
+
+# List dispatched panes that have FINISHED (kind: task.ready) — the read-side
+# payoff of arm: the finish-detection Stop hook flips a pane task.dispatched ->
+# task.ready when its session stops, and this surfaces those. Prints one line
+# per ready pane: "<session>:<window>\t<prompt>". Also (with a header) shows
+# still-in-flight (task.dispatched) panes so the hub can report "N ready, M
+# still working". Reads through attention-state.sh list (the supported consumer
+# API), which already filters dead panes.
+cmd_ready_list() {
+  local state_script json
+  state_script=$(_state_script) || { echo "claude-tmux-attention not installed; no dispatch state" >&2; return 1; }
+  json=$("$state_script" list 2>/dev/null) || return 1
+  # tmux_session:tmux_window<TAB>kind<TAB>prompt, for task.* rows only.
+  printf '%s' "$json" | jq -r '
+    .[]
+    | select(.kind == "task.ready" or .kind == "task.dispatched")
+    | "\(.kind)\t\(.tmux_session):\(.tmux_window)\t\(.prompt)"
+  '
 }
 
 cmd_go() {
@@ -122,7 +156,8 @@ main() {
     send)    cmd_send "$@" ;;
     go)      cmd_go "$@" ;;
     capture) cmd_capture "$@" ;;
-    *) err "usage: $0 {target <project>|send <target>|go <target>|capture <target>}" ;;
+    ready)   cmd_ready_list "$@" ;;
+    *) err "usage: $0 {target <project>|send <target>|go <target>|capture <target>|ready}" ;;
   esac
 }
 
