@@ -65,3 +65,5 @@
 [user]
   name = Adam Milligan
   email = adam.milligan@gusto.com
+[credential]
+	helper = osxkeychain
