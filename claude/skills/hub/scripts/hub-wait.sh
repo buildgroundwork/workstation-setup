@@ -6,7 +6,13 @@
 #
 #   hub-wait.sh <target> [timeout_seconds]
 #       <target>  "<session>:<window>" of a pane previously armed by `send`.
-#       timeout   max seconds to wait (default 1800 = 30 min). 0 = no timeout.
+#       timeout   max seconds to wait. Default 0 = no timeout (wait until the
+#                 pane finishes or blocks). The two outcomes that matter return
+#                 promptly anyway — finished (0) and blocked-on-a-prompt (4) —
+#                 and a dead pane errors at resolve, so the only thing a finite
+#                 timeout guards against is a truly-hung session, which is rare
+#                 and harmless (Adam sees it when he visits the window). Pass a
+#                 positive value only if you want a hard deadline.
 #
 # Exit codes:
 #   0  finished — pane reached task.ready; prints the settled pane contents.
@@ -26,7 +32,7 @@ set -euo pipefail
 err() { printf '%s\n' "$*" >&2; exit 1; }
 
 target="${1:?usage: hub-wait.sh <target> [timeout_seconds]}"
-timeout="${2:-1800}"
+timeout="${2:-0}"   # 0 = no timeout; wait until finished or blocked
 interval="${HUB_WAIT_INTERVAL:-3}"   # seconds between state-file checks
 
 STATE_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
