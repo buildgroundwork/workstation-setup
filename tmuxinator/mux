@@ -3,6 +3,24 @@ set -e
 
 aws sts get-caller-identity &>/dev/null || aws sso login
 
+# Pre-warm the Claude plugin cache before launching the session herd.
+#
+# Claude Code resolves/materializes marketplace plugins asynchronously at
+# startup, and a startup gate registers plugin hooks BEFORE that async resolve
+# finishes — so on a cold boot, sessions can come up with plugin hooks missing
+# (e.g. claude-tmux-attention's Notification/Stop hooks never register, and the
+# attention notifications silently don't fire). Upstream bug:
+# github.com/anthropics/claude-code/issues/63028 (no startup wait-for-plugins
+# flag exists). Launching ~12 sessions at once against a cold cache makes the
+# race reliably lose.
+#
+# One throwaway headless session first materializes + caches the plugins so the
+# real sessions launch against a hot cache and win the registration race.
+# Blocking (so the cache is warm before the herd) but timeout-guarded and
+# non-fatal (set -e is suspended) so a hiccup never blocks boot.
+echo "Pre-warming Claude plugin cache..."
+( set +e; timeout 90 claude -p 'reply: ok' --allowed-tools '' >/dev/null 2>&1 ) || true
+
 tmuxinator start hub
 tmuxinator start adrs
 tmuxinator start claude-code
