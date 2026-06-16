@@ -55,7 +55,8 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 
 ## Commit messages
 
-- **Explain *why*, not *what*** — the diff already shows what changed. Cite the spec / ADR / ticket that motivated it. Follow cbea.ms/git-commit conventions: imperative-mood subject, capitalized, no trailing period, ~50 chars; wrap the body.
+- **Explain *why*, not *what*** — the diff already shows what changed. Cite the spec / ADR / ticket that motivated it. Follow cbea.ms/git-commit conventions: imperative-mood subject, capitalized, no trailing period; wrap the body.
+- **Subject is a hard 50-character limit, not a target.** Count it *before* committing (`git log` the subject through `wc -c` minus the newline, or just count) and shorten until it fits. Don't ship a 51+ subject and fix it after — "~50" has repeatedly drifted to 55–60; treat 50 as the ceiling.
 - **No PR numbers in commit messages** — refer to the substance (the concept), not the PR.
 - **Omit narration** — no slice numbers, refactor play-by-play, or process checklists in the body. State only what the diff can't convey.
 - Each commit should be one logical change and independently green.
