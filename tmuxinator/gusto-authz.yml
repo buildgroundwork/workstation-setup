@@ -1,0 +1,15 @@
+name: GustoAuthZ
+root: ~/workspace/gusto-authz
+
+tmux_options: -2
+
+attach: false
+
+windows:
+  - vim: vim
+  - server:
+  - db:
+  - console:
+  - shell:
+  - shell2:
+  - claude: claude --continue
