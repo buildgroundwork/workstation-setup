@@ -11,6 +11,7 @@
       "Bash(grep *)",
       "Bash(awk *)",
       "Bash(echo *)",
+      "Bash(printf *)",
       "Bash(jq *)",
       "Bash(mkdir *)",
       "Bash(pbcopy *)",
