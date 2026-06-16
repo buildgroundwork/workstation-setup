@@ -106,6 +106,7 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 - **Don't write source files via Bash heredoc** — use the Edit/Write tools so file state and diffs are tracked by the harness.
 - **View files with the Read tool, never shell viewers** (`sed`/`cat`/`head`/`tail`/`git show <ref>:<path>`). `sed` isn't on the allowlist, so even read-only `sed -n` trips a permission prompt every time. For a committed version that differs from the working tree, check out the branch and Read the working file. Applies to sub-agent prompts too — tell them to Read working-tree files, not `git show`.
 - **`claude --resume <name>` resumes a session by its display name** (set via `-n`/`--name`). Adam relies on this from the CLI; don't claim it needs a session ID despite what `--help` implies.
+- **Don't wrap shell commands in decorative `echo`/`printf` banners, and avoid compound `cmd && echo …` / `… | …` chains for diagnostics.** The permission matcher keys on the *whole* command string, so an `echo` inside a compound (or a `printf`) trips a prompt even though bare `echo`/`printf` are allowlisted. Run the real command alone (usually already allowed — `git`, `jq`, `ls`) and put section labels in the chat response, not the shell. One command per concern beats a banner-wrapped pipeline.
 
 ## Memory routing (global vs. project)
 
