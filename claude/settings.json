@@ -103,6 +103,18 @@
     ]
   },
   "model": "opus[1m]",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/hub/scripts/hub-stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  },
   "statusLine": {
     "type": "command",
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
@@ -118,18 +130,6 @@
     "github@claude-plugins-official": true,
     "figma@claude-plugins-official": true,
     "ruby-lsp@claude-plugins-official": true
-  },
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/skills/hub/scripts/hub-stop-hook.sh"
-          }
-        ]
-      }
-    ]
   },
   "alwaysThinkingEnabled": false,
   "effortLevel": "high",
