@@ -57,12 +57,16 @@ tmux send-keys -t "$TARGET" 'cd <project-dir> && <command>' Enter
 **Observe the target pane / wait for readiness** — use the Bash tool for these (they return output to you):
 
 ```bash
-tmux capture-pane -t "$TARGET" -p | tail -40   # see recent output
-overmind status                                # ground-truth process state (zenpayroll)
+tmux capture-pane -t "$TARGET" -p   # see pane output (bare — matches Bash(tmux *) allowlist)
+overmind status                     # ground-truth process state (zenpayroll)
 curl -sf http://localhost:3000/ -o /dev/null && echo up || echo down
 ```
 
-Poll with a Monitor-style until-loop on one of those observe commands — never a bare `sleep`, and never by reading the send-keys command's stdout (there isn't any).
+**Poll with SIMPLE, allowlist-matching commands — do NOT wrap the observe command in an `until ... do sleep ... done` loop or a `| tail | grep` pipeline.** A compound shell line (loop keywords, pipes, `sleep`, `;`-sequencing) does not match the simple `Bash(tmux *)` / `Bash(curl *)` prefix rules even when every individual binary in it is allowlisted, so the harness falls through to a permission prompt on *every* poll. That makes a long boot prompt repeatedly. Instead:
+
+- Issue a **bare** `tmux capture-pane -t "$TARGET" -p` (or bare `overmind status`, bare `curl ...`) and do the "is the prompt back / is it up?" decision in the harness from the returned output — one observe call per check, no shell wrapper.
+- To space out repeated checks, prefer the **`Monitor` tool** or a `run_in_background` Bash command, not a hand-rolled `until`/`sleep` loop in the foreground.
+- Never read the `send-keys` command's stdout (there isn't any); always observe via a separate bare command.
 
 **Note on delegated skills:** if a project setup/start skill (e.g. `zp-start`) is invoked and it runs things via the Bash tool itself, its output won't land in the target pane. Prefer to honor the user's pane convention: when delegating, drive the underlying command (e.g. `bin/server`) into the target pane yourself, or — if the project skill must own the flow — tell the user that step's logs are in the Claude session rather than the pane. Adam's strong preference is logs in the pane.
 
@@ -91,7 +95,7 @@ Discover the project's start skill:
 
 **Start the server in the target pane**, e.g. `tmux send-keys -t "$TARGET" 'cd <project-dir> && bin/server' Enter`. The server is a long-lived foreground process living in that pane — do NOT background it with the Bash tool; that's the whole point (the user watches the logs there).
 
-Then **poll for readiness with the Bash tool using observe-only commands** — a Monitor-style until-loop on `overmind status`, an HTTP probe (`curl -sf http://localhost:3000/`), or `tmux capture-pane -t "$TARGET" -p` to read the logs. Never a bare sleep, and never by reading send-keys output (there is none). Don't claim it's up until one of those confirms it.
+Then **poll for readiness with the Bash tool using bare, allowlist-matching observe commands** — bare `overmind status`, a bare HTTP probe (`curl -sf http://localhost:3000/ -o /dev/null && echo up || echo down`), or bare `tmux capture-pane -t "$TARGET" -p` to read the logs. Make the up/not-up decision in the harness from the output; do NOT wrap the check in an `until`/`sleep` loop or `| grep` pipeline (it prompts for permission every poll — see "Observe the target pane" above). Space repeated checks via the `Monitor` tool or a `run_in_background` command. Never read send-keys output (there is none). Don't claim it's up until a bare observe confirms it.
 
 Watch for `bin/server`'s **interactive prompts** in the pane (e.g. the stale `.overmind.sock` Y/n). Because the command runs in the pane, you can answer it directly: `tmux send-keys -t "$TARGET" 'Y' Enter`. But prefer to pre-empt the known ones via the auto-fix catalog (clear the stale socket before starting) so no prompt appears.
 
