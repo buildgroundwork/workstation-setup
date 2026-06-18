@@ -45,13 +45,20 @@ If the right workstream folder doesn't exist yet, propose the path and offer to 
 
 ## Changelog conventions (must import cleanly into Google Docs)
 
-When Adam reviews in the Doc and asks for changes, edit the MD **and** maintain a changelog file (`<doc-name>-changelog.md`) so he can apply the same edits to the Doc. The changelog:
+When Adam reviews in the Doc and asks for changes, edit the MD **and** maintain a changelog file (`<doc-name>-changelog.md`) so he can apply the same edits to the Doc. The changelog is a **copy/paste source**: Adam selects a quoted passage and pastes it straight into the Doc, so the quoted text must carry the styling it will have in the Doc. The changelog:
 
-- **No code blocks or quote blocks.** They render badly on Google Docs import. Quoted before/after text goes in plain paragraphs.
-- **Use real Markdown emphasis** (`**bold**`, `*italic*`) — Google Docs renders it on import. Bold the field labels: **Section:**, **Reason:**, **Original text:**, **Revised text:**.
-- **Reproduce the document's own emphasis** inside quoted passages, so the before/after matches the source.
-- Each entry: the **section** it falls in, a one-line **reason**, the **original text**, and the **revised text**. For additions (no prior text), say so and quote the new text.
-- Date entries.
+- **Fence each Original/Revised passage with distinctive marker lines, not `---`.** A horizontal rule is too subtle and collides with real section separators in the document. Use a line of non-standard characters that would never appear in actual prose, so the boundary is unmistakable and is trivially left out when Adam selects the passage between the markers. Convention:
+  - `▼▼▼▼▼ ORIGINAL — paste-ready below ▼▼▼▼▼`
+  - …the quoted original passage…
+  - `▲▲▲▲▲ end original ▲▲▲▲▲`
+  - `▼▼▼▼▼ REVISED — paste-ready below ▼▼▼▼▼`
+  - …the quoted revised passage…
+  - `▲▲▲▲▲ end revised ▲▲▲▲▲`
+- **Reproduce the source's actual styling inside quoted passages, not just its emphasis.** If the quoted passage is (or contains) a heading, keep it as a Markdown heading (`##`) so it imports as a Doc heading and pastes in with the right style; keep `**bold**`/`*italic*` likewise. The quote should paste in looking like the Doc, because that is exactly what Adam does with it.
+- **No code blocks.** They render badly on Google Docs import. (Headings inside quoted passages are fine and are used deliberately, per above.)
+- **Use real Markdown emphasis** for the field labels, each on its own line: **Section:**, **Reason:**, **Original text:**, **Revised text:**. Never put the quoted text inline after the label — it makes the quote render as a run-on continuation of the bold label on Docs import.
+- Each entry: the **section** it falls in, a one-line **reason**, the **original text**, and the **revised text**. For additions (no prior text), say so and quote the new text. When an entry also has small downstream edits in the same section that aren't worth full before/after blocks, summarize them in a short paragraph after the blocks.
+- Date entries. Newest first.
 
 ## Hard rules during review
 
@@ -83,4 +90,7 @@ The canonical Doc gets an entry in Adam's Writing database.
 4. Add a Writing Log entry with the URL; link the relevant Big Idea if there is one.
 5. Tell Adam the Doc is ready for his import/paste.
 6. On his comments: edit MD, update changelog, pbcopy single passages on request.
-7. On completion (Adam says he's done reviewing): bump the Writing Log entry to **In Review**, then disposition the MD.
+7. **Closing the loop** (Adam says he's done reviewing / "close the loop") is a single atomic checklist — do ALL of it, in order, before reporting the loop closed. Skipping the status bump leaves the entry showing HOT in `/today`, which is the tell that the close was half-done:
+   1. Bump the Writing Log entry's **Status → "In Review"** (authoring done, out for others to comment; not "Accepted"/"Published" prematurely). This is the step most easily forgotten because "close the loop" feels like a file operation — it is not done until the status is bumped.
+   2. Clear or delete the changelog (it's spent scaffolding).
+   3. Disposition the MD per its kind (Google-Doc-canonical → delete; repo-doc-with-mirror → keep tracked).
