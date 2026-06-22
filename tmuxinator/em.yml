@@ -12,7 +12,7 @@ windows:
   - console: bundle exec rails c
   - shell:
   - shell2:
-  - claude: claude
+  - claude: claude --continue
   # - sidekiq: bundle exec sidekiq
   # - webpack: bin/webpack-dev-server
 
