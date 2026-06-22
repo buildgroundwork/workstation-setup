@@ -31,22 +31,22 @@ This skill is **project-agnostic**. It does not assume zenpayroll. It discovers 
 
 The skill is invoked from a Claude pane inside a tmux window that has (at least) one **other** pane beside it. Commands run in that other pane so the user can watch.
 
-**Identify the target pane** (do this once, up front):
+**Identify the target pane** (do this once, up front). This is fully automatic — never ask the user to confirm the pane.
+
+> ⚠️ **Do NOT use `tmux display-message -p '#{window_index}'` to decide which window you're in.** Run without `-t`, it resolves against tmux's "current" window, which is *not* reliably the window Claude's Bash session is attached to — especially right after a `split-window` shifts the active pane. This has put the skill on the wrong window (reported window 0 while Claude was actually in window 1) and run the whole fresh start in the wrong pane. Instead, **anchor on the active pane and stay in its window.**
 
 ```bash
-# The window Claude is running in
-WIN=$(tmux display-message -p '#{session_name}:#{window_index}')
-# All panes in this window: index, id, left-edge, active-flag
-tmux list-panes -t "$WIN" -F '#{pane_index} #{pane_id} #{pane_left} #{pane_active}'
+# List EVERY pane across ALL windows — do not pre-filter to one window.
+tmux list-panes -s -F '#{window_index} #{pane_id} #{pane_left} #{pane_active}'
 ```
 
-- The **active** pane (`#{pane_active}` = 1) is Claude's own pane — never target it.
-- The **target** is the other pane. By Adam's convention the command pane is the **left-hand** pane (smallest `#{pane_left}`); the Claude pane is on the right. So pick the non-active pane with the smallest `pane_left`. Capture its `pane_id` (e.g. `%18`) as `TARGET`.
-- If there is **no** other pane in the window, create one to its left and use that:
+- The **active** pane (`#{pane_active}` = 1) is Claude's own pane — never target it. Note its `window_index`; that is the window the fresh start runs in.
+- The **target** is the other pane **in that same window**: by Adam's convention the command pane is the **left-hand** pane (smaller `#{pane_left}`); the Claude pane is on the right. Pick the non-active pane in Claude's window with the smallest `pane_left`. Capture its `pane_id` (e.g. `%26`) as `TARGET`.
+- If there is **no** other pane in Claude's window, create one to its left and use that:
   ```bash
-  tmux split-window -h -b -t "$WIN"   # -b puts the new pane before (left of) the current one
+  tmux split-window -h -b -t "$CLAUDE_PANE"   # -b puts the new pane left of Claude's own pane
   ```
-  then re-list and grab the new pane's id. (Don't resize unless asked — leave layout to the user.)
+  Target the split at **Claude's pane id**, not a bare window index — `split-window` moves the active pane, so re-run `list-panes -s` afterward and grab the new pane's id. (Don't resize unless asked — leave layout to the user.)
 
 **Run a command in the target pane:**
 
