@@ -183,14 +183,17 @@ cmd_ready_list() {
   local state_script json
   state_script=$(_state_script) || { echo "claude-tmux-attention not installed; no dispatch state" >&2; return 1; }
   json=$("$state_script" list 2>/dev/null) || return 1
-  # tmux_session:tmux_window<TAB>kind<TAB>prompt, for task.* rows only.
-  # NOTE: reads the scalar `kind` (current plugin contract). When the
-  # claude-tmux-attention redesign merges, `kind` becomes a derived shim and
-  # `states` is canonical — migrate this to read `.states` then, in one commit.
+  # tmux_session:tmux_window<TAB>state<TAB>prompt, for dispatch states only.
+  # Reads the canonical `states` SET (claude-tmux-attention >= 0.2.0). A pane
+  # can hold several states at once (e.g. task.dispatched AND attention.needed),
+  # so emit one line per dispatch-state the pane carries. The derived `kind`
+  # field is deprecated and not read here.
   printf '%s' "$json" | jq -r '
     .[]
-    | select(.kind == "task.ready" or .kind == "task.dispatched")
-    | "\(.kind)\t\(.tmux_session):\(.tmux_window)\t\(.prompt)"
+    | . as $row
+    | (.states // [])[]
+    | select(. == "task.ready" or . == "task.dispatched")
+    | "\(.)\t\($row.tmux_session):\($row.tmux_window)\t\($row.prompt)"
   '
 }
 
@@ -217,23 +220,19 @@ cmd_capture() {
   _clear_ready "$target" || true
 }
 
-# Remove this target's task.ready row (consumed-dispatch cleanup), but only if
-# that's what the pane has — leave attention.needed and task.dispatched alone.
-# NOTE: uses remove-by-pane + a manual "don't clobber attention" guard (current
-# plugin contract). When the redesign merges, this becomes a single
-# `mark-viewed <pane>` call (which clears only task.ready by contract, making
-# the guard unnecessary) — migrate then, in the same commit as cmd_ready_list.
+# Mark this target's dispatch result as viewed (consumed-dispatch cleanup).
+# Reading the pane back IS the "viewed" transition. Uses the plugin's
+# `mark-viewed` (claude-tmux-attention >= 0.2.0), which by contract clears ONLY
+# the pane's task.ready state, leaving a still-running task.dispatched and any
+# attention.needed intact — so the old hand-rolled "inspect kinds, don't clobber
+# attention" guard is no longer needed; the plugin enforces that boundary.
+# Best-effort; never fails the capture.
 _clear_ready() {
-  local target="$1" state_script pane kinds
+  local target="$1" state_script pane
   state_script=$(_state_script) || return 0
   pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 0
   [[ -n "$pane" ]] || return 0
-  kinds=$("$state_script" list 2>/dev/null | jq -r --arg p "$pane" \
-    '[ .[] | select(.tmux_pane == $p) | .kind ] | join(" ")' 2>/dev/null)
-  case " $kinds " in
-    *" attention.needed "*) return 0 ;;                 # real attention — keep it
-    *" task.ready "*) "$state_script" remove-by-pane "$pane" >/dev/null 2>&1 ;;
-  esac
+  "$state_script" mark-viewed "$pane" >/dev/null 2>&1
 }
 
 main() {
