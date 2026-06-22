@@ -80,18 +80,76 @@ cmd_send() {
   local prompt
   prompt=$(cat)
   [[ -n "$prompt" ]] || err "empty prompt; nothing to send"
-  # Send the text literally, then Enter as a separate key event so it submits.
-  # A long prompt arrives as a bracketed paste; if the Enter follows too
-  # quickly it lands *inside* the paste buffer instead of submitting. Pause so
-  # the paste settles, then send Enter as its own keystroke.
-  tmux send-keys -t "$target" -l "$prompt"
+
+  # Resolve the concrete pane id once — every check below keys on it, and a
+  # window target's active pane could otherwise drift between checks.
+  local pane
+  pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) \
+    || err "could not resolve pane for: $target"
+  [[ -n "$pane" ]] || err "could not resolve pane for: $target"
+
+  # GATE: refuse if the pane is in copy/scroll mode. The user co-uses these
+  # panes; copy-mode means they're actively reading scrollback, and send-keys
+  # into a pane in copy-mode is *swallowed by copy-mode* (the keys are
+  # interpreted as copy-mode commands, not delivered to Claude) — so it both
+  # fails AND disrupts. `#{pane_in_mode}` is a reliable first-class tmux signal
+  # (1 = in any mode). Do NOT force-exit the mode; that would yank the user out
+  # of what they're reading. Refuse, report, exit non-zero — the caller retries
+  # when the pane is free. (Mid-generation is deliberately NOT gated: Claude's
+  # TUI queues typed input until the current turn ends, so a send into a busy-
+  # but-not-in-mode pane is safe; copy-mode is the only real hazard.)
+  if [[ "$(tmux display-message -t "$pane" -p '#{pane_in_mode}' 2>/dev/null)" == "1" ]]; then
+    printf 'pane %s (%s) is in copy/scroll mode — not sending (you are looking at it). Retry when it is at the prompt.\n' \
+      "$pane" "$target" >&2
+    return 3
+  fi
+
+  # DELIVER via bracketed paste (load-buffer + paste-buffer -p), not send-keys
+  # -l. A long multi-line prompt injected as raw keystrokes can interleave with
+  # a TUI redraw and land malformed; a bracketed paste is delivered as one
+  # atomic unit the terminal won't tear. Enter follows as its own key event,
+  # after a settle, so it submits rather than landing inside the paste buffer.
+  local buf="hub-dispatch-$$"
+  printf '%s' "$prompt" | tmux load-buffer -b "$buf" - 2>/dev/null \
+    || err "failed to stage prompt buffer for: $target"
+  tmux paste-buffer -t "$pane" -b "$buf" -p -d 2>/dev/null   # -d deletes the buffer after paste
   sleep 0.3
-  tmux send-keys -t "$target" Enter
-  # Mark the dispatched pane as awaiting a result (kind: task.dispatched), so
-  # the dashboard and popup show it as in-flight and the finish-detection Stop
-  # hook can later flip it to task.ready. Best-effort: arming must never break a
+  tmux send-keys -t "$pane" Enter
+
+  # CONFIRM before arming. The send above can still silently fail to land (a
+  # transient mode flip, a dead pane). Arming a pane we didn't actually deliver
+  # to is the bug behind phantom "dispatched" rows and the resend race (operator
+  # can't tell a dropped send from a submitted one, resends, double-dispatches).
+  # So verify the input line is now empty (the prompt submitted) before writing
+  # the task.dispatched row. A non-empty input line after Enter means the prompt
+  # is sitting unsent (e.g. it arrived mid-redraw) — report and DON'T arm.
+  sleep 0.4
+  if _pane_input_pending "$pane"; then
+    printf 'WARNING: prompt may not have submitted on %s (%s) — input line not clear. NOT arming; verify the pane.\n' \
+      "$pane" "$target" >&2
+    return 4
+  fi
+
+  # Mark the dispatched pane as awaiting a result (state: task.dispatched), so
+  # the dashboard and popup show it in-flight and the finish-detection Stop hook
+  # can later flip it to task.ready. Best-effort: arming must never break a
   # dispatch, so a missing plugin or a resolve failure is silently ignored.
-  _arm_target "$target" "$prompt" || true
+  _arm_target "$pane" "$prompt" || true
+}
+
+# Heuristic: does the pane's input line still hold unsent text? After a
+# successful submit the Claude TUI input shows an empty prompt (a bare "❯" with
+# nothing after it). If the last non-blank line is a prompt glyph followed by
+# visible text, the prompt didn't submit. Best-effort and conservative: on any
+# uncertainty it returns false (not-pending) so a real send is never reported as
+# failed — the cost of a false "ok" is a stale dispatched row (self-heals when
+# the pane finishes), whereas a false "pending" would spuriously refuse a good
+# send. Returns 0 (true) only when it is fairly sure text is sitting unsent.
+_pane_input_pending() {
+  local pane="$1" lastline
+  lastline=$(tmux capture-pane -t "$pane" -p 2>/dev/null | grep -vE '^\s*$' | tail -1)
+  # A prompt glyph (❯ or >) immediately followed by non-space text == unsent.
+  [[ "$lastline" =~ ^[[:space:]]*[❯\>][[:space:]]+[^[:space:]] ]]
 }
 
 # Resolve the claude-tmux-attention state script. Its install path is
@@ -104,13 +162,12 @@ _state_script() {
   printf '%s' "$s"
 }
 
-# Arm the target pane (kind: task.dispatched). Returns non-zero (caller
-# ignores) if the plugin isn't installed or the pane can't be resolved.
+# Arm the pane (state: task.dispatched). Takes an already-resolved pane id (the
+# caller resolves it once, up front). Returns non-zero (caller ignores) if the
+# plugin isn't installed.
 _arm_target() {
-  local target="$1" prompt="$2" state_script pane
+  local pane="$1" prompt="$2" state_script
   state_script=$(_state_script) || return 1
-  # arm keys by tmux pane id; resolve the target window's active pane.
-  pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 1
   [[ -n "$pane" ]] || return 1
   "$state_script" arm "$pane" "$prompt" >/dev/null 2>&1
 }
@@ -127,6 +184,9 @@ cmd_ready_list() {
   state_script=$(_state_script) || { echo "claude-tmux-attention not installed; no dispatch state" >&2; return 1; }
   json=$("$state_script" list 2>/dev/null) || return 1
   # tmux_session:tmux_window<TAB>kind<TAB>prompt, for task.* rows only.
+  # NOTE: reads the scalar `kind` (current plugin contract). When the
+  # claude-tmux-attention redesign merges, `kind` becomes a derived shim and
+  # `states` is canonical — migrate this to read `.states` then, in one commit.
   printf '%s' "$json" | jq -r '
     .[]
     | select(.kind == "task.ready" or .kind == "task.dispatched")
@@ -159,6 +219,10 @@ cmd_capture() {
 
 # Remove this target's task.ready row (consumed-dispatch cleanup), but only if
 # that's what the pane has — leave attention.needed and task.dispatched alone.
+# NOTE: uses remove-by-pane + a manual "don't clobber attention" guard (current
+# plugin contract). When the redesign merges, this becomes a single
+# `mark-viewed <pane>` call (which clears only task.ready by contract, making
+# the guard unnecessary) — migrate then, in the same commit as cmd_ready_list.
 _clear_ready() {
   local target="$1" state_script pane kinds
   state_script=$(_state_script) || return 0
@@ -166,7 +230,6 @@ _clear_ready() {
   [[ -n "$pane" ]] || return 0
   kinds=$("$state_script" list 2>/dev/null | jq -r --arg p "$pane" \
     '[ .[] | select(.tmux_pane == $p) | .kind ] | join(" ")' 2>/dev/null)
-  # Only clear when the pane's sole/relevant signal is a finished dispatch.
   case " $kinds " in
     *" attention.needed "*) return 0 ;;                 # real attention — keep it
     *" task.ready "*) "$state_script" remove-by-pane "$pane" >/dev/null 2>&1 ;;
