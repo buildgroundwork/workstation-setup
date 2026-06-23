@@ -54,7 +54,7 @@ pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) \
 pane_state() {
   [[ -f "$STATE_FILE" ]] || { echo none; return; }
   jq -r --arg p "$pane" '
-    [ .[] | select(.tmux_pane == $p) | .kind ] as $kinds
+    [ .[] | select(.tmux_pane == $p) | (.states // [])[] ] as $kinds
     | if   ($kinds | index("task.ready"))       then "ready"
       elif ($kinds | index("attention.needed")) then "blocked"
       elif ($kinds | index("task.dispatched"))  then "dispatched"

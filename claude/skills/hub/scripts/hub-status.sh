@@ -59,7 +59,20 @@ load_attention() {
   [[ -n "$STATE_SCRIPT" && -x "$STATE_SCRIPT" ]] || return 0
   local json
   json=$("$STATE_SCRIPT" list 2>/dev/null) || return 0
-  ATTN=$(jq -r '.[] | select(.tmux_session != "") | "\(.tmux_session)\t\(.kind)"' <<<"$json" 2>/dev/null || true)
+  # The plugin's `states` is a SET per pane; this dashboard wants a single
+  # label per session. Project the highest-priority active state, reproducing
+  # the precedence the now-removed derived `kind` used:
+  # attention.needed > task.ready > task.dispatched. (kind/reason shim removed
+  # in claude-tmux-attention 0.2.1; states is the sole canonical field.)
+  ATTN=$(jq -r '
+    .[] | select(.tmux_session != "")
+    | (.states // []) as $s
+    | ( if   ($s | index("attention.needed")) then "attention.needed"
+        elif ($s | index("task.ready"))       then "task.ready"
+        elif ($s | index("task.dispatched"))  then "task.dispatched"
+        else "" end ) as $kind
+    | "\(.tmux_session)\t\($kind)"
+  ' <<<"$json" 2>/dev/null || true)
 }
 
 # attn_kind <session-name> -> its kind, or empty.
