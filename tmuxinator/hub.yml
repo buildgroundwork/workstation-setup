@@ -12,4 +12,4 @@ windows:
   - shell:
   - shell:
   - shell:
-  - claude: claude --resume hub
+  - claude: INTER_SESSION_NAME=hub claude --resume hub
