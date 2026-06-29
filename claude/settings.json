@@ -143,7 +143,16 @@
     "Notion@claude-plugins-official": true,
     "github@claude-plugins-official": true,
     "figma@claude-plugins-official": true,
-    "ruby-lsp@claude-plugins-official": true
+    "ruby-lsp@claude-plugins-official": true,
+    "inter-session@inter-session": true
+  },
+  "extraKnownMarketplaces": {
+    "inter-session": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/yilunzhang/claude-code-inter-session.git"
+      }
+    }
   },
   "alwaysThinkingEnabled": false,
   "effortLevel": "high",
