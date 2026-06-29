@@ -49,6 +49,7 @@
       "Bash(bktide *)",
       "Bash(bash ~/.claude/skills/hub/scripts/*)",
       "Bash(~/.claude/skills/hub/scripts/*)",
+      "Bash(isend:*)",
       "mcp__claude_ai_Gdrive_Gusto__create_file",
 
       "mcp__notiongusto__notion-fetch",
