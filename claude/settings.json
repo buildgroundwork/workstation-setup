@@ -51,7 +51,6 @@
       "Bash(~/.claude/skills/hub/scripts/*)",
       "Bash(isend:*)",
       "mcp__claude_ai_Gdrive_Gusto__create_file",
-
       "mcp__notiongusto__notion-fetch",
       "mcp__notiongusto__notion-search",
       "mcp__notiongusto__notion-query-data-sources",
@@ -59,7 +58,6 @@
       "mcp__notiongusto__notion-get-comments",
       "mcp__notiongusto__notion-get-users",
       "mcp__notiongusto__notion-get-teams",
-
       "mcp__gleangusto__search",
       "mcp__gleangusto__code_search",
       "mcp__gleangusto__chat",
@@ -69,7 +67,6 @@
       "mcp__gleangusto__meeting_lookup",
       "mcp__gleangusto__user_activity",
       "mcp__gleangusto__memory",
-
       "mcp__jiraconfluencegusto__getJiraIssue",
       "mcp__jiraconfluencegusto__searchJiraIssuesUsingJql",
       "mcp__jiraconfluencegusto__getJiraIssueRemoteIssueLinks",
@@ -91,14 +88,12 @@
       "mcp__jiraconfluencegusto__searchConfluenceUsingCql",
       "mcp__jiraconfluencegusto__search",
       "mcp__jiraconfluencegusto__fetch",
-
       "mcp__gdocsgusto__fetch",
       "mcp__gdocsgusto__fetch_all_tabs",
       "mcp__gdocsgusto__fetch_tab",
       "mcp__gdocsgusto__list_tabs",
       "mcp__gdocsgusto__list_comments",
       "mcp__gdocsgusto__search",
-
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:github.io)",
@@ -157,6 +152,7 @@
   "alwaysThinkingEnabled": false,
   "effortLevel": "high",
   "tui": "default",
+  "skipWorkflowUsageWarning": true,
   "theme": "light-daltonized",
   "editorMode": "vim"
 }
