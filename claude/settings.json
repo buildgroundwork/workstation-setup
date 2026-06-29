@@ -50,6 +50,7 @@
       "Bash(bash ~/.claude/skills/hub/scripts/*)",
       "Bash(~/.claude/skills/hub/scripts/*)",
       "Bash(isend:*)",
+      "Bash(iflag:*)",
       "mcp__claude_ai_Gdrive_Gusto__create_file",
       "mcp__notiongusto__notion-fetch",
       "mcp__notiongusto__notion-search",
