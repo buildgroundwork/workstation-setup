@@ -15,6 +15,13 @@
 # Usage (from tmux.conf):
 #   status-right "#(~/.claude/skills/hub/scripts/cta-resolve.sh status) ..."
 #   bind-key -T claude A run-shell "~/.claude/skills/hub/scripts/cta-resolve.sh popup"
+#   bind-key -T claude C run-shell "~/.claude/skills/hub/scripts/cta-resolve.sh clear-pane #{pane_id}"
+#
+# Most requests map to a tmux/ UI script and take no args. `clear-pane` is the
+# exception: it maps to scripts/attention-state.sh and forwards a pane id (the
+# manual clear for an interrupt-orphaned attention.needed — no hook fires on a
+# user Esc-interrupt, so the state lingers until the next prompt). Any args
+# after the request are passed through to the resolved script.
 #
 # Contract: on ANY failure (manifest missing, jq absent, field gone, script not
 # found) it exits 0 with no output. A status-line command must never emit junk,
@@ -24,9 +31,11 @@
 set -euo pipefail
 
 what="${1:-}"
+shift || true   # remaining args (e.g. a pane id) forward to the resolved script
 case "$what" in
-  status) script="tmux/status.sh" ;;
-  popup)  script="tmux/popup.sh" ;;
+  status)     script="tmux/status.sh" ;;
+  popup)      script="tmux/popup.sh" ;;
+  clear-pane) script="scripts/attention-state.sh"; set -- clear-pane "$@" ;;
   *) exit 0 ;;   # unknown request: silently do nothing
 esac
 
@@ -41,4 +50,4 @@ root=$(jq -r --arg k "$PLUGIN_KEY" \
   '.plugins[$k][0].installPath // empty' "$MANIFEST" 2>/dev/null) || exit 0
 [[ -n "$root" && -x "$root/$script" ]] || exit 0
 
-exec "$root/$script"
+exec "$root/$script" "$@"
