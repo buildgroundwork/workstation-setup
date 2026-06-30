@@ -81,6 +81,36 @@ attn_kind() {
   printf '%s\n' "$ATTN" | awk -F'\t' -v s="$1" '$1==s{print $2; exit}'
 }
 
+# A snapshot of inter-session bus membership: the set of connected peer names,
+# one per line. inter-session writes a clients/<pid>.session file per connected
+# session; .name is the bus identity (auto-named from cwd as lowercase-hyphenated,
+# or set explicitly e.g. the Hub's 'hub'). Empty if inter-session isn't installed
+# or nothing is connected. Pure read — the dashboard never touches the bus.
+BUS=""
+load_bus() {
+  local dir="$HOME/.claude/data/inter-session/clients"
+  [[ -d "$dir" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  # One name per connected client. A stale .session file (dead listener) is
+  # possible but cheap to over-report; the bus prunes them on reconnect.
+  BUS=$(jq -r '.name // empty' "$dir"/*.session 2>/dev/null || true)
+}
+
+# Normalize a tmux session name to the bus naming convention (lowercase, every
+# run of non-alphanumerics -> a single hyphen): "Gusto Eventing" -> "gusto-eventing",
+# "Claude Code" -> "claude-code", "Hub" -> "hub". This is the join key between the
+# dashboard's tmux session names and inter-session's cwd-derived bus names.
+bus_name() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g'
+}
+
+# bus_connected <tmux-session-name> -> 0 (true) if that session is on the bus.
+bus_connected() {
+  [[ -n "$BUS" ]] || return 1
+  local want; want=$(bus_name "$1")
+  printf '%s\n' "$BUS" | grep -qxF "$want"
+}
+
 # state <session-name> <age-min> -> working|waiting|dispatched|ready|idle|cold
 resolve_state() {
   local name="$1" age="$2" kind
@@ -124,6 +154,7 @@ bar() {
 render() {
   local now; now=$(date +%s)
   load_attention
+  load_bus
 
   # Build the per-session rows: name \t pct \t age \t state
   local rows
@@ -147,8 +178,16 @@ render() {
 
   # Build the idle and cold summary lines first — each is 0 or 1 line — so the
   # working rows know how much of the MAX_LINES budget is left for them.
+  # Idle names, each suffixed with ⇄ if on the bus, joined by " · ". The marker
+  # is appended per-name (not awk-batched) so a connected-but-idle session's bus
+  # membership is still visible — that's exactly where a dead monitor (running
+  # but silently off the bus) would otherwise hide.
   local idle coldn idle_line="" cold_line=""
-  idle=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="idle"{printf "%s · ",$1}' | sed 's/ · $//')
+  idle=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="idle"{print $1}' \
+    | while IFS= read -r n; do
+        [[ -z "$n" ]] && continue
+        if bus_connected "$n"; then printf '%s⇄ · ' "$n"; else printf '%s · ' "$n"; fi
+      done | sed 's/ · $//')
   [[ -n "$idle" ]] && idle_line=$(printf ' ○ idle: %s' "$idle")
   # Cold sessions fold to a bare count — the names are low-signal ("these exist,
   # ignore them") and a long name list wraps in a narrow pane, eating rows the
@@ -162,7 +201,11 @@ render() {
     | awk -F'\t' '$4!="idle" && $4!="cold"' \
     | sort -t$'\t' -k4,4 -k2,2rn \
     | while IFS=$'\t' read -r name pct age state; do
-        printf ' %s %-18s %3s%% %s\n' "$(icon "$state")" "$name" "$pct" "$(bar "$pct")"
+        # Bus marker: ⇄ if this session is on the inter-session peer bus, else a
+        # space (keeps the name column aligned). A running session that is NOT
+        # marked is off the bus — e.g. its monitor died on resume/compaction.
+        local busmark=' '; bus_connected "$name" && busmark='⇄'
+        printf ' %s%s %-18s %3s%% %s\n' "$(icon "$state")" "$busmark" "$name" "$pct" "$(bar "$pct")"
       done)
   local active_n; active_n=$(printf '%s\n' "$active" | grep -c .)
 
