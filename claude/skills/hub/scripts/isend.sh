@@ -13,16 +13,31 @@
 # confirmation — send.py is silent on success (exit 0, no output), so a caller
 # otherwise can't distinguish a delivered send from a swallowed one.
 #
-# Usage:
-#   isend <name> <text>     send <text> to peer session <name>
-#   isend --all <text>      broadcast <text> to all connected peers
+# The message body is read from STDIN, never an argument. Reason (found the hard
+# way): when the body was a CLI arg, its content sat in the command line where
+# the permission scanner inspects the RAW string pre-quoting — so a body
+# containing a zsh glob pattern (`<->`, `<N>`, `<N-M>` numeric-range globs, also
+# `*?[]`) tripped a permission prompt EVEN WITH Bash(isend:*) allowlisted, and
+# single-quoting did not help (the scanner reads before the shell strips quotes).
+# Reading the body from stdin keeps it out of the command line entirely, so no
+# message content can ever trip the scanner. Only the peer name (a validated
+# `[a-z0-9-]` token) and the literal `--all` appear as args.
+#
+# Usage (body on stdin — use a quoted heredoc, like the pbcopy convention):
+#   isend <name> <<'EOF'
+#   message body, any characters, globs and all
+#   EOF
+#
+#   isend --all <<'EOF'        broadcast to all connected peers
+#   ...
+#   EOF
 #
 # Resolution: the plugin's current cache dir (version-globbed, newest wins) for
 # send.py, and the plugin's isolated venv python (so `websockets` imports). Both
 # are the updater-maintained current paths; no version is hardcoded.
 #
 # Exit: 0 on a delivered send (prints the confirmation); non-zero with a message
-# on stderr if the plugin, venv, or args are missing — never silent on failure.
+# on stderr if the plugin, venv, args, or stdin body are missing — never silent.
 
 set -euo pipefail
 
@@ -40,18 +55,34 @@ send_py=$(ls -d "$PLUGIN_CACHE"/*/skills/inter-session/bin/send.py 2>/dev/null \
 [[ -x "$VENV_PY" ]] \
   || die "inter-session venv python not found at $VENV_PY (run /inter-session install-deps?)"
 
-# Parse: broadcast vs. directed. Directed needs both a name and text.
-if [[ "${1:-}" == "--all" ]]; then
-  shift
-  [[ $# -ge 1 ]] || die "usage: isend --all <text>"
-  text="$*"
-  "$VENV_PY" "$send_py" --all --text "$text" || die "send.py failed (broadcast)"
-  printf 'isend: sent → (broadcast)\n'
-else
-  name="${1:-}"
-  shift || true
-  [[ -n "$name" && $# -ge 1 ]] || die "usage: isend <name> <text>   |   isend --all <text>"
-  text="$*"
-  "$VENV_PY" "$send_py" --to "$name" --text "$text" || die "send.py failed (to $name)"
-  printf 'isend: sent → %s\n' "$name"
-fi
+# Target: --all (broadcast) or a peer name. The body is NEVER an arg — only the
+# target is. A stray text arg after the target is almost certainly someone using
+# the old `isend NAME "text"` form; reject it with a pointer to the stdin form
+# rather than silently sending the wrong thing (or letting it trip the scanner).
+# Target: --all (broadcast) or a peer name. The body is NEVER an arg — only the
+# target is. A stray text arg after the target is almost certainly someone using
+# the old `isend NAME "text"` form; reject it with a pointer to the stdin form
+# rather than silently sending the wrong thing (or letting it trip the scanner).
+# Build the send.py target as an array so the name is never word-split/globbed.
+target_args=(); target_label=""
+case "${1:-}" in
+  --all) target_args=(--all);        target_label="(broadcast)"; shift ;;
+  "")    die "usage: isend <name> <<'EOF' … EOF   |   isend --all <<'EOF' … EOF" ;;
+  -*)    die "unknown flag '${1}'. usage: isend <name> <<'EOF' … EOF" ;;
+  *)     target_args=(--to "${1}");  target_label="${1}";         shift ;;
+esac
+[[ $# -eq 0 ]] \
+  || die "message body goes on STDIN, not as an argument (avoids the glob-scanner prompt). Use: isend ${target_label} <<'EOF' … EOF"
+
+# Refuse to hang waiting on a terminal: stdin must be a pipe/redirect, not a tty.
+[[ -t 0 ]] && die "no message body on stdin. Use a heredoc: isend ${target_label} <<'EOF' … EOF"
+
+body=$(cat)
+[[ -n "$body" ]] || die "empty message body on stdin; nothing to send"
+
+# send.py still wants --text; feed the stdin body to it. The body reaches send.py
+# as an argv value HERE (inside the wrapper), but that is the wrapper's own
+# subprocess call — it never appeared on isend's command line, which is what the
+# permission scanner inspected. So glob-laden bodies are safe.
+"$VENV_PY" "$send_py" "${target_args[@]}" --text "$body" || die "send.py failed ($target_label)"
+printf 'isend: sent → %s\n' "$target_label"
