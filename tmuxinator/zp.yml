@@ -14,14 +14,14 @@ windows:
           panes:
             - # zp server started by claude
             - cd ~/workspace/sea-turtle && ./gradlew run
-        - claude "start the server"
+        - INTER_SESSION_NAME=zp-server claude "start the server"
   - db: bundle exec rails db
   - console: bundle exec rails c
   - shell:
       layout: main-vertical
       panes:
         -
-        - claude
+        - INTER_SESSION_NAME=zp-shell claude
   - shell2:
   - claude: claude --continue
   # - sidekiq: bundle exec sidekiq
