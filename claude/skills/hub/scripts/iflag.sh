@@ -16,8 +16,12 @@
 # a stable name an allowlist matches (Bash(iflag:*)), session_id pulled from
 # $CLAUDE_CODE_SESSION_ID, producer resolved by version glob.
 #
-# Usage (run BY the agent, inside its own session/pane):
-#   iflag "<reason the human is needed>"
+# Usage (run BY the agent, inside its own session/pane; reason on STDIN):
+#   iflag <<'EOF'
+#   <short reason the human is needed>
+#   EOF
+# Keep the reason a SHORT pointer ("need your call on X"), not the full question
+# — the question belongs in the chat response; the flag just says "come look."
 #
 # The reason becomes the row's message (what the popup shows). The row is
 # attributed to THIS pane (the producer reads $TMUX_PANE), so the agent can only
@@ -38,8 +42,18 @@ PLUGIN_CACHE="$HOME/.claude/plugins/cache/gusto-claude-code/claude-tmux-attentio
 
 die() { printf 'iflag: %s\n' "$*" >&2; exit 1; }
 
-reason="${*:-}"
-[[ -n "$reason" ]] || die "usage: iflag \"<reason the human is needed>\""
+# The reason is read from STDIN, never an argument — same reason as isend: a
+# reason on the command line gets glob-scanned, so metachars in it (parens, a
+# question mark, `<->`/`<N-M>`, braces-with-quotes) trip a permission prompt even
+# with Bash(iflag:*) allowlisted. Ironically that's most likely to bite exactly
+# when flagging — the prompt then does the notifier's job by accident. Reading
+# from stdin keeps the reason off the command line. Reject a stray arg (the old
+# `iflag "reason"` form) with a pointer rather than silently glob-scanning it.
+[[ $# -eq 0 ]] \
+  || die "reason goes on STDIN, not as an argument. Use: iflag <<'EOF' … EOF   (or: echo reason | iflag)"
+[[ -t 0 ]] && die "no reason on stdin. Use a heredoc: iflag <<'EOF' … EOF"
+reason=$(cat)
+[[ -n "$reason" ]] || die "empty reason on stdin; nothing to flag"
 
 sid="${CLAUDE_CODE_SESSION_ID:-}"
 [[ -n "$sid" ]] \
