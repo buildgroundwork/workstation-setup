@@ -148,7 +148,7 @@ render() {
       done)
 
   local total clock
-  total=$(printf '%s\n' "$rows" | grep -c .)
+  total=$(printf '%s\n' "$rows" | awk 'NF{n++} END{print n+0}')
   clock=$(date '+%H:%M')
 
   # Build the idle and cold summary lines first — each is 0 or 1 line — so the
@@ -159,8 +159,17 @@ render() {
   # Cold sessions fold to a bare count — the names are low-signal ("these exist,
   # ignore them") and a long name list wraps in a narrow pane, eating rows the
   # height calc doesn't account for. The count carries what matters.
-  coldn=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="cold"' | grep -c .)
-  (( coldn > 0 )) && cold_line=$(printf ' ◌ cold (%s)' "$coldn")
+  # Count with awk's own accumulator (print n+0) rather than `| grep -c .`:
+  # grep -c exits 1 on a zero count, which under `set -e` aborts the whole
+  # render — and it conflates "zero matches" with "grep failed," so it can't be
+  # guarded cleanly. awk prints 0 for no matches AND exits 0, so a real pipe
+  # failure still propagates while a legitimate zero count does not kill us.
+  coldn=$(printf '%s\n' "$rows" | awk -F'\t' '$4=="cold"{n++} END{print n+0}')
+  # NB: `(( expr )) &&` at statement level ABORTS under `set -e` when expr is
+  # false (arithmetic-false returns exit 1). Use an `if` so a zero cold-count
+  # (the common all-active case) doesn't kill the render — the bug that made the
+  # dashboard silently fail to open whenever no session was cold.
+  if (( coldn > 0 )); then cold_line=$(printf ' ◌ cold (%s)' "$coldn"); fi
 
   # Active rows (working/waiting/dispatched/ready), context-heavy first.
   local active
@@ -174,7 +183,9 @@ render() {
         [[ ${#name} -gt 18 ]] && name="${name:0:17}…"
         printf ' %s %-18s %3s%% %s\n' "$(icon "$state")" "$name" "$pct" "$(bar "$pct")"
       done)
-  local active_n; active_n=$(printf '%s\n' "$active" | grep -c .)
+  # awk non-blank-line count, not `grep -c .` (see coldn note: grep -c exits 1 on
+  # zero, aborting the render under set -e when there are no active rows).
+  local active_n; active_n=$(printf '%s\n' "$active" | awk 'NF{n++} END{print n+0}')
 
   # Budget: MAX_LINES minus header(1) minus idle/cold lines = room for active
   # rows. If active rows overflow, show (budget - 1) and a "+N more working".
@@ -182,7 +193,7 @@ render() {
   [[ -n "$idle_line" ]] && reserved=$((reserved + 1))
   [[ -n "$cold_line" ]] && reserved=$((reserved + 1))
   local budget=$((MAX_LINES - reserved))
-  (( budget < 1 )) && budget=1
+  if (( budget < 1 )); then budget=1; fi
 
   printf ' HUB · %s live · %s\n' "$total" "$clock"
   if (( active_n > budget )); then
@@ -192,8 +203,14 @@ render() {
   else
     [[ -n "$active" ]] && printf '%s\n' "$active"
   fi
-  [[ -n "$idle_line" ]] && printf '%s\n' "$idle_line"
-  [[ -n "$cold_line" ]] && printf '%s\n' "$cold_line"
+  # `if`, not `[[ -n ]] &&`: a false `&&` guard returns 1, and as the last
+  # statement in render() that makes the function exit non-zero despite a
+  # complete render — which a caller running this under `set -e` (the pane-open
+  # height calc) treats as failure. An `if` with a false condition returns 0, so
+  # an empty idle/cold line no longer poisons the exit status. Nothing absorbed:
+  # a genuine failure on any line above still aborts under `set -e`.
+  if [[ -n "$idle_line" ]]; then printf '%s\n' "$idle_line"; fi
+  if [[ -n "$cold_line" ]]; then printf '%s\n' "$cold_line"; fi
 }
 
 # --loop[=N]: clear-and-redraw every N seconds until killed. Render to a buffer
@@ -214,7 +231,7 @@ main() {
         # changes mainly when Adam interacts with a session, so this rarely
         # fires mid-keystroke. Resize before drawing so the frame fills it.
         if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
-          local want; want=$(printf '%s\n' "$frame" | grep -c .)
+          local want; want=$(printf '%s\n' "$frame" | awk 'NF{n++} END{print n+0}')
           (( want > MAX_LINES )) && want=$MAX_LINES
           (( want < 1 )) && want=1
           tmux resize-pane -t "$TMUX_PANE" -y "$want" 2>/dev/null || true
