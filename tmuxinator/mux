@@ -21,6 +21,16 @@ aws sts get-caller-identity &>/dev/null || aws sso login
 echo "Pre-warming Claude plugin cache..."
 ( set +e; timeout 90 claude -p 'reply: ok' --allowed-tools '' >/dev/null 2>&1 ) || true
 
+# Sweep stale inter-session client registrations left by a prior unclean
+# shutdown (crash / SIGKILL bypasses the graceful atexit cleanup, so orphaned
+# clients/<pid>.session files survive pointing at dead pids). MUST run here —
+# before the herd launches — because once the new instances connect and
+# register, their fresh entries can't be told apart from the orphans. NOT
+# guarded: if the sweep fails, set -e halts the boot on purpose — better to fix
+# the sweep and start clean than to boot into a known-messy bus state.
+echo "Sweeping stale inter-session clients..."
+~/.claude/skills/hub/scripts/isweep.sh
+
 tmuxinator start hub
 tmuxinator start adrs
 tmuxinator start claude-code
