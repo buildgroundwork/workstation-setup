@@ -60,14 +60,18 @@ load_attention() {
   local json
   json=$("$STATE_SCRIPT" list 2>/dev/null) || return 0
   # The plugin's `states` is a SET per pane; this dashboard wants a single
-  # label per session. Project the highest-priority active state, reproducing
-  # the precedence the now-removed derived `kind` used:
-  # attention.needed > task.ready > task.dispatched. (kind/reason shim removed
-  # in claude-tmux-attention 0.2.1; states is the sole canonical field.)
+  # label per session. Project the highest-priority active state, in the SAME
+  # urgency order the plugin's status.sh uses (0.2.4):
+  #   human.requested > attention.needed > task.ready > task.dispatched.
+  # human.requested (an agent flagged the operator via iflag) and
+  # attention.needed (blocked on a prompt) are the two "needs me" signals that
+  # matter in the peer-graph era; the task.* pair is legacy dispatch, rarely set
+  # now that agents message peer-to-peer, but still projected if present.
   ATTN=$(jq -r '
     .[] | select(.tmux_session != "")
     | (.states // []) as $s
-    | ( if   ($s | index("attention.needed")) then "attention.needed"
+    | ( if   ($s | index("human.requested"))  then "human.requested"
+        elif ($s | index("attention.needed")) then "attention.needed"
         elif ($s | index("task.ready"))       then "task.ready"
         elif ($s | index("task.dispatched"))  then "task.dispatched"
         else "" end ) as $kind
@@ -81,11 +85,12 @@ attn_kind() {
   printf '%s\n' "$ATTN" | awk -F'\t' -v s="$1" '$1==s{print $2; exit}'
 }
 
-# state <session-name> <age-min> -> working|waiting|dispatched|ready|idle|cold
+# state <session-name> <age-min> -> flagged|waiting|dispatched|ready|idle|cold|working
 resolve_state() {
   local name="$1" age="$2" kind
   kind=$(attn_kind "$name")
   case "$kind" in
+    human.requested)  echo flagged;    return ;;
     attention.needed) echo waiting;    return ;;
     task.dispatched)  echo dispatched; return ;;
     task.ready)       echo ready;      return ;;
@@ -98,10 +103,11 @@ resolve_state() {
 
 icon() {
   case "$1" in
+    flagged)    printf '✋' ;;   # human.requested — an agent is asking for you
+    waiting)    printf '⏸' ;;   # attention.needed — blocked on a prompt
     working)    printf '●' ;;
-    waiting)    printf '⏸' ;;
-    dispatched) printf '◐' ;;
-    ready)      printf '✓' ;;
+    dispatched) printf '◐' ;;   # legacy dispatch (rarely set in the peer-graph era)
+    ready)      printf '✓' ;;   # legacy dispatch result
     idle)       printf '○' ;;
     cold)       printf '◌' ;;
   esac
@@ -162,6 +168,10 @@ render() {
     | awk -F'\t' '$4!="idle" && $4!="cold"' \
     | sort -t$'\t' -k4,4 -k2,2rn \
     | while IFS=$'\t' read -r name pct age state; do
+        # Truncate names past the 18-col field to a 17-char stem + ellipsis, so a
+        # long session name (e.g. "ReBAC Relationship Writer") can't overflow the
+        # column and shove the %/bar right, misaligning the row from the others.
+        [[ ${#name} -gt 18 ]] && name="${name:0:17}…"
         printf ' %s %-18s %3s%% %s\n' "$(icon "$state")" "$name" "$pct" "$(bar "$pct")"
       done)
   local active_n; active_n=$(printf '%s\n' "$active" | grep -c .)
