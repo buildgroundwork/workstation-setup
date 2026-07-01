@@ -5,24 +5,25 @@
 # receives a peer message it judges genuinely needs the human should surface
 # that on the same status-bar/popup attention signal the human already watches —
 # rather than the conversation staying invisible on the bus. The
-# claude-tmux-attention plugin's producer (`attention-state.sh add`) already does
-# exactly this: it sets attention.needed on the running pane's row, which the bar
-# and popup render. But calling it by hand is fiddly — the producer reads a hook-
-# shaped JSON payload from stdin (session_id is load-bearing: a row with no
-# session_id can never be cleared and leaks forever), and the script path is
-# version-stamped. This wraps both: a stable name an allowlist matches
-# (Bash(iflag:*)), the session_id pulled from $CLAUDE_CODE_SESSION_ID, and the
-# producer resolved by version glob.
+# claude-tmux-attention plugin's `request-human` producer does exactly this: it
+# sets `human.requested` on the running pane's row, which the bar and popup
+# render. Crucially, human.requested clears on VIEW (mark-viewed when the human
+# jumps to the pane), NOT on the next PostToolUse — so unlike attention.needed,
+# the flag SURVIVES the flagging agent's subsequent tool calls. The agent can
+# flag itself and keep working; the flag persists until the human looks. Calling
+# the producer by hand is fiddly (it reads a hook-shaped JSON payload from stdin,
+# session_id load-bearing; the script path is version-stamped), so this wraps it:
+# a stable name an allowlist matches (Bash(iflag:*)), session_id pulled from
+# $CLAUDE_CODE_SESSION_ID, producer resolved by version glob.
 #
 # Usage (run BY the agent, inside its own session/pane):
 #   iflag "<reason the human is needed>"
 #
-# The reason becomes the attention row's message (what the popup shows). The row
-# is attributed to THIS pane (the producer reads $TMUX_PANE), so the agent can
-# only flag itself — which is the right semantics: the session that received the
-# message is the one that lights up. It clears the usual way (the plugin's
-# resolution hooks clear attention.needed by session_id when the human acts in
-# the pane), or via the prefix+A C manual chord.
+# The reason becomes the row's message (what the popup shows). The row is
+# attributed to THIS pane (the producer reads $TMUX_PANE), so the agent can only
+# flag itself — the right semantics: the session that received the message is the
+# one that lights up. It clears when the human VIEWS the pane (the plugin's
+# mark-viewed, e.g. via the attention popup's jump), or the prefix+A C chord.
 #
 # Note: the producer SUPPRESSES the flag if the human is currently focused on
 # this pane (you're already looking — no need to flag). That's intended: iflag
@@ -57,5 +58,5 @@ payload=$(jq -nc --arg sid "$sid" --arg msg "$reason" --arg cwd "$PWD" \
   '{session_id: $sid, message: $msg, cwd: $cwd}') \
   || die "failed to build payload"
 
-printf '%s' "$payload" | "$state_sh" add || die "attention-state.sh add failed"
+printf '%s' "$payload" | "$state_sh" request-human || die "attention-state.sh request-human failed"
 printf 'iflag: flagged this session — "%s"\n' "$reason"
