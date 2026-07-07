@@ -45,10 +45,19 @@ emit_entries() {
     local running=false claude_target="" claude_panes=0
     if [[ -n "$live_panes" ]] && printf '%s\n' "$live_panes" | awk -F'\t' -v s="$name" '$1==s{found=1} END{exit !found}'; then
       running=true
-      # Find the claude window (window_name == "claude") and count claude panes.
+      # Find the claude window and count claude panes. Match window names that
+      # CONTAIN "claude", not an exact "claude": tmux automatic-rename rewrites a
+      # window's name to its running command, so a session running the `claude.exe`
+      # binary (e.g. the ReBAC overseer) shows a window named "claude.exe", not the
+      # static "claude" the tmuxinator layout assigns. An exact match dropped those
+      # sessions from the map entirely (claude_panes=0 -> excluded from the
+      # dashboard). Contains-match keeps line 51 consistent with the pane-command
+      # match on line 55 ($4 ~ /claude/). Lowest-index match wins (print $2; exit),
+      # which picks the canonical window 6 even when a session has a stray second
+      # claude window.
       local cwin
       cwin=$(printf '%s\n' "$live_panes" \
-        | awk -F'\t' -v s="$name" '$1==s && $3=="claude"{print $2; exit}')
+        | awk -F'\t' -v s="$name" '$1==s && $3 ~ /claude/{print $2; exit}')
       if [[ -n "$cwin" ]]; then
         claude_target="${name}:${cwin}"
         claude_panes=$(printf '%s\n' "$live_panes" \
