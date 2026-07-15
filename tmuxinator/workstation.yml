@@ -1,5 +1,5 @@
-name: Hub
-root: ~/workspace
+name: Workstation
+root: ~/.workstation
 
 tmux_options: -2
 
@@ -12,4 +12,4 @@ windows:
   - shell:
   - shell:
   - shell:
-  - claude: INTER_SESSION_NAME=hub claude --resume hub
+  - claude: INTER_SESSION_NAME=workstation claude --continue

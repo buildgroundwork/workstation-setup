@@ -31,7 +31,7 @@ echo "Pre-warming Claude plugin cache..."
 echo "Sweeping stale inter-session clients..."
 ~/.claude/skills/hub/scripts/isweep.sh
 
-tmuxinator start hub
+tmuxinator start workstation
 tmuxinator start adrs
 tmuxinator start claude-code
 tmuxinator start zp

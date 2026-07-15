@@ -25,7 +25,7 @@ The hub depends on a few pieces. On a fresh machine, in order:
    /plugin install claude-tmux-attention@gusto-claude-code
    /reload-plugins   # or restart
    ```
-2. **The hub tmuxinator session.** `~/.workstation/tmuxinator/hub.yml` defines it (`name: Hub`, root `~/workspace`, `vim` in window 0, `claude --resume hub` in window 6). The `mux` boot script starts it first. Seed the resumable session once with `claude --name hub` in `~/workspace`.
+2. **The workstation tmuxinator session.** `~/.workstation/tmuxinator/workstation.yml` defines it (`name: Workstation`, root `~/.workstation`, `vim` in window 0, `INTER_SESSION_NAME=workstation claude --continue` in the claude window). The `mux` boot script starts it first (`tmuxinator start workstation`). Formerly "Hub" rooted at `~/workspace` — repurposed from a dispatch controller into the whole-workstation config session as peer messaging replaced top-down dispatch; the bus identity is `workstation`.
 3. **The finish-detection Stop hook.** Wired in global `~/.claude/settings.json` as a `Stop` hook pointing at `scripts/hub-stop-hook.sh`. Takes effect on the next Claude restart (settings load at startup).
 4. **This skill** lives at `~/.claude/skills/hub/` (symlinked from `~/.workstation/claude/skills/hub/`, so it's version-controlled and reproduced by `setup.sh`).
 
@@ -80,4 +80,4 @@ The long-lived "dispatch, babysit, follow up, report" task-runner is the hub ses
 
 - **`claude-tmux-attention`** (marketplace plugin) — provides the state file, the `arm`/`ready`/`list` API, and the `prefix+A` attention popup that renders the hub's `task.*` facts for free.
 - **`/today`** — Adam's Notion orientation reader. A natural driver: run `/today`, let its priorities suggest what to dispatch where, then dispatch each with confirmation.
-- **`~/.workstation`** — the dotfiles repo. The hub skill, `hub.yml`, the `settings.json` Stop hook, and `setup.sh` wiring all live there, version-controlled.
+- **`~/.workstation`** — the dotfiles repo. The hub skill, `workstation.yml`, the `settings.json` Stop hook, and `setup.sh` wiring all live there, version-controlled.
