@@ -165,6 +165,7 @@
   },
   "alwaysThinkingEnabled": false,
   "effortLevel": "high",
+  "autoUpdatesChannel": "stable",
   "tui": "default",
   "skipWorkflowUsageWarning": true,
   "theme": "light-daltonized",
