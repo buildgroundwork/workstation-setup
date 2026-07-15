@@ -7,9 +7,20 @@ attach: false
 
 windows:
   - vim: vim
-  - server:
+  - servers:
+      layout: even-horizontal
+      panes:
+        # left: vite (apps/gusto frontend). mise exec -- is required (repo pins
+        # node 24 via mise; a bare shell defaults to node 22 and fails the engine
+        # check). env -u JAVA_HOME is a post-crash mkcert/Java-keystore workaround
+        # (harmless to keep; can drop once JAVA_HOME is fixed). Serves HTTPS :3036.
+        - env -u JAVA_HOME mise exec -- yarn nx dev gusto
+        # middle: gus-gateway — a SEPARATE repo, so cd there first. Serves :3400.
+        - cd ~/workspace/gus-gateway && bin/dev
+        # right: the MCP dev server (:8787).
+        - yarn nx run @gusto/mcp:dev
   - db:
   - console:
   - shell:
   - shell2:
-  - claude: claude --continue
+  - claude: mise exec node@22 -- claude --continue

@@ -12,4 +12,4 @@ windows:
   - console:
   - shell:
   - shell2:
-  - claude: claude --continue
+  - claude: INTER_SESSION_NAME=rebac-overseer claude --continue

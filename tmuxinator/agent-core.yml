@@ -1,5 +1,5 @@
-name: ReBAC PDP
-root: ~/workspace/rebac-pdp
+name: Agent Core
+root: ~/workspace/agent-core
 
 tmux_options: -2
 
@@ -7,9 +7,10 @@ attach: false
 
 windows:
   - vim: vim
-  - server: bin/server
+  - server:
   - db:
   - console:
   - shell:
   - shell2:
   - claude: claude --continue
+

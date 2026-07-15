@@ -47,4 +47,5 @@ tmuxinator start rebac-pdp
 tmuxinator start rebac-relationship-writer
 tmuxinator start rebac-schema-registry
 tmuxinator start gusto-authz
+tmuxinator start agent-core
 tmux attach
