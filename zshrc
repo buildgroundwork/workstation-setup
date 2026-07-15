@@ -144,9 +144,12 @@ test -e "${HOME}/.zshrc.local" && source "${HOME}/.zshrc.local"
 unset -v GEM_HOME
 
 
-source ~/.gusto/init.sh
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 
 # Java (added by sea-turtle setup)
 export JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null || echo "/opt/homebrew/opt/openjdk")
 export PATH="$JAVA_HOME/bin:$PATH"
+
+# mise activation must come LAST so its shims win PATH precedence (the postgres/java
+# prepends above were shadowing mise's per-directory ruby/node shims).
+source ~/.gusto/init.sh
