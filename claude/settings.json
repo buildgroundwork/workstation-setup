@@ -1,6 +1,7 @@
 {
   "env": {
-    "GUSTO_CLAUDE_SETUP": "true"
+    "GUSTO_CLAUDE_SETUP": "true",
+    "CLAUDE_TMUX_ATTENTION_DEBUG": "1"
   },
   "permissions": {
     "allow": [
