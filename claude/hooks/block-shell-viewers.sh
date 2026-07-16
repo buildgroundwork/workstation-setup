@@ -21,16 +21,37 @@
 # — so a string literal or filename containing "cat" doesn't false-positive.
 # Deliberately narrow: only the working-tree-viewer commands this rule is
 # about, not a general command blocklist.
+#
+# Carve-out: `grep ... | head` / `grep ... | tail` is exempt. There's no
+# built-in Grep tool in this session to redirect to (grep/glob are absent —
+# a known Claude Code bug when ENABLE_TOOL_SEARCH is on, they're neither in
+# the active tool set nor discoverable via ToolSearch:
+# https://github.com/anthropics/claude-code/issues/63525), so grep itself is
+# not blocked here. Given that, `head`/`tail` immediately after a `grep`
+# pipe is paginating SEARCH RESULTS, not viewing a file — Read has no way
+# to bound grep's output, so blocking this would leave no way to do it at
+# all, not redirect to something better (unlike `cat file | head`, which
+# still is a plain file view and stays blocked, since `cat` is caught first).
 
 payload=$(cat)
 command=$(jq -r '.tool_input.command // ""' <<<"$payload")
 
 [[ -z "$command" ]] && exit 0
 
-# Tried against the start of the command and after each shell separator.
+# Strip out any `grep|egrep|fgrep ... | head` / `| tail` segment before
+# testing — that specific head/tail is exempt (see comment above). Whatever
+# is LEFT is tested against the normal sed/cat/head/tail pattern, so an
+# unrelated sed/cat/head/tail elsewhere in the same command is still caught
+# (e.g. `sed -n foo; grep bar | head` still denies on the sed).
+scrubbed="$command"
+grep_pipe_pattern='(e|f)?grep[^|;&]*\|[[:space:]]*(head|tail)([[:space:]]|$)'
+while [[ "$scrubbed" =~ $grep_pipe_pattern ]]; do
+  scrubbed="${scrubbed/${BASH_REMATCH[0]}/}"
+done
+
 pattern='(^|[;&|]+[[:space:]]*)(sed|cat|head|tail)([[:space:]]|$)'
 
-if [[ "$command" =~ $pattern ]]; then
+if [[ "$scrubbed" =~ $pattern ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
