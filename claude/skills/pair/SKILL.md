@@ -64,6 +64,38 @@ jobs individually in parallel — they are actively working together, checking e
 other's work, looking for holes. The ABSENCE of pushback over several exchanges is a
 SMELL to flag: it means they've stopped actually pairing (ties to the kill criterion).
 
+### Check the premise, not just the answer
+
+A peer's question or claim is an unverified claim, including when it is about you. A
+leading question ("was this your error?", "did your framing cause this?") carries a
+premise; check the premise before answering it. Mutual agreement across sessions is not
+verification when the premise originated with one of the sessions.
+
+This has already cost a session. The anchor concluded a commit had breached a gate and
+asked the pair leading questions premised on that breach. The navigator audited its own
+message, found real structural evidence consistent with the premise, and confirmed the
+breach. The driver gave an honest account of its reasoning and accepted the fault. All
+three were wrong at once: there was no gate to breach. This skill's paraphrase of the
+human's rule was wrong, and the sessions trusted the paraphrase over the human's actual
+words, which one of them had personally quoted approvingly half an hour earlier.
+
+Two things transfer:
+1. Three sessions agreeing does not make a premise true. Concurrence verifies work
+   against a standard; it cannot verify the standard.
+2. When a document (this skill, a spec, a CLAUDE.md) paraphrases a human's instruction,
+   the human's actual words win. Check the source before acting on the paraphrase,
+   especially before accusing someone, freezing work, or blocking a correct action.
+
+Practical rule: take a suspected-fault conclusion to the human BEFORE interrogating a
+peer about it. Asking a peer to account for a fault you have not confirmed is expensive
+and produces false confessions.
+
+This generalizes the instinct about verifying a tool's mechanism before pulling its
+lever; the sessions caught four unverified levers in a day (a compiler autocorrect flag,
+a lint disable assumed dead, a comment trim against a cop that ignores comments, a
+gitignore pattern assumed covered). Same error with authority as the mechanism, which is
+worse: the cost is a peer wrongly accused rather than a wasted command.
+
 ## Agreement gates
 
 Consequential actions require genuine mutual agreement, not a nod. The red->green
@@ -80,34 +112,33 @@ loop with ceremony). Whichever session escalates to the human, raise it the way 
 solo session would: state the question in a chat response, then run `iflag` as the
 last action so it surfaces on the attention bar (see the global `iflag` guidance).
 
-**A commit needs TWO independent gates, and satisfying one does not satisfy the
-other:**
-1. **Human authorization** — this repo's own rule for whether a commit may happen at
-   all (e.g. Adam's standing instruction that commits happen only when he says so).
-2. **Pair concurrence** — the navigator and driver actually agreeing, per the
-   handshake above.
+**Pair concurrence IS the commit gate. There is no separate human-authorization gate
+for commits.** The two seats agreeing is the authorization; the pair does not wait on
+the anchor or the human to bless a commit. This is a property of pairing as such, not
+a per-repo grant to negotiate at kickoff: the two-seat handshake is what a solo
+session's "never commit unless asked" rule was standing in for. A repo owner who wants
+commits gated further can say so, and that is an ordinary override needing no
+machinery here.
 
-**Conditional authorization must be honored as conditional.** The human may lift gate
-1 while explicitly preserving gate 2 — e.g. "if the navigator agrees, you may
-proceed." That is NOT a blanket go; it is gate 1 cleared, gate 2 still open. The
-driver waits for the navigator's concurrence to actually close before committing.
-"Commit if the pair agrees" and "commit" are different instructions — collapsing the
-first into the second is the failure mode to guard against, not a shortcut.
+**A conditional concurrence is not a concurrence.** "I concur once you add the nil
+case" and "I concur" are different; the condition has to actually close first. Either
+seat can concur conditionally, and the other must let the condition land before
+treating the handshake as complete.
 
-Only an UNMISTAKABLY unconditional instruction bypasses gate 2 (e.g. "commit now,
-don't wait for the pair"). That must be explicit — never inferred from a conditional
-go, and never inferred merely from the human having said something about committing.
-When in doubt, wait or ask.
+The anchor never manufactures or relocates pair concurrence. It must not instruct the
+driver to commit around the navigator, and must not instruct the navigator to "tell
+the driver to commit" — both relocate a command instead of removing one. Concurrence
+stays peer-to-peer: one seat proposes, the other concurs or blocks; nobody directs a
+commit, the anchor included.
 
-The anchor conveys that gate 1 is cleared; it never manufactures or relocates gate 2.
-Concretely, the anchor must not instruct the driver to commit around the navigator,
-and must not instruct the navigator to "tell the driver to commit" — both relocate a
-command instead of removing one. Pair concurrence stays peer-to-peer: one seat
-proposes, the other concurs or blocks; nobody directs a commit, including the anchor.
+Failure modes to watch, in order of how often they bite: committing without the other
+seat's actual concurrence; reading a conditional concurrence as a bare one; and an
+anchor or navigator inventing a human gate the human never asked for, which freezes
+correct work.
 
-A driver that refuses to commit without authorization is doing its job correctly.
-The failure mode isn't refusing too readily — it's checking only whether an
-authorization exists and not what its terms are.
+**`git push` stays gated on the human.** A commit is local and reversible; a push is
+outward-facing and is not. The pair may commit freely on mutual concurrence, and must
+not push without the human's word.
 
 ## TDD spine
 
@@ -267,8 +298,10 @@ of what the resume-or-create logic below is doing with session identity.
 > design fit, verify refactors are real Fowler-refactoring. You never touch the working
 > tree. Consequential actions (red->green, test-is-right, green-ok, refactor, commit)
 > require you AND the driver to actively agree; genuine disagreement blocks and you
-> escalate to the anchor (bus name `<repo>`). Keep the anchor informed of progress +
-> commits. Feed the driver only just-enough context per task. Communicate via `isend`
+> escalate to the anchor (bus name `<repo>`). Your concurrence IS the commit gate — do
+> not invent a human or anchor sign-off on top of it — and if you concur conditionally,
+> say so plainly so the driver waits for the condition. Pushing, unlike committing, does
+> need the human. Keep the anchor informed of progress + commits. Feed the driver only just-enough context per task. Communicate via `isend`
 > with the body from a written file. Wait for the anchor's first step.
 
 ### Kickoff prompt — Driver (sonnet, bottom-right)
@@ -285,10 +318,13 @@ of what the resume-or-create logic below is doing with session identity.
 > looked for. Report each result to the navigator (failing test + why it fails; or
 > green + diff + refactor check). Commits require you AND the navigator to agree; if
 > you disagree, escalate to the anchor (bus name `<repo>`). You can also raise a
-> concern to the anchor directly. Follow THIS repo's conventions (its CLAUDE.md — e.g.
-> the pre-commit checks, lint rules, test style, and "commit only when told"); do not
-> hardcode any one stack's conventions. Communicate via `isend` with the body from a
-> written file. Wait for the navigator's first task.
+> concern to the anchor directly. The navigator's concurrence is the commit gate: you do
+> NOT wait on the anchor or the human to authorize a commit, but a conditional concur
+> ("concur once you add X") is not a concur until X lands. Do not push without the
+> human's word. Follow THIS repo's conventions (its CLAUDE.md — e.g. the pre-commit
+> checks, lint rules, test style); do not hardcode any one stack's conventions.
+> Communicate via `isend` with the body from a written file. Wait for the navigator's
+> first task.
 
 ## Kill criterion
 
