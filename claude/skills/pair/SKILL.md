@@ -80,6 +80,35 @@ loop with ceremony). Whichever session escalates to the human, raise it the way 
 solo session would: state the question in a chat response, then run `iflag` as the
 last action so it surfaces on the attention bar (see the global `iflag` guidance).
 
+**A commit needs TWO independent gates, and satisfying one does not satisfy the
+other:**
+1. **Human authorization** — this repo's own rule for whether a commit may happen at
+   all (e.g. Adam's standing instruction that commits happen only when he says so).
+2. **Pair concurrence** — the navigator and driver actually agreeing, per the
+   handshake above.
+
+**Conditional authorization must be honored as conditional.** The human may lift gate
+1 while explicitly preserving gate 2 — e.g. "if the navigator agrees, you may
+proceed." That is NOT a blanket go; it is gate 1 cleared, gate 2 still open. The
+driver waits for the navigator's concurrence to actually close before committing.
+"Commit if the pair agrees" and "commit" are different instructions — collapsing the
+first into the second is the failure mode to guard against, not a shortcut.
+
+Only an UNMISTAKABLY unconditional instruction bypasses gate 2 (e.g. "commit now,
+don't wait for the pair"). That must be explicit — never inferred from a conditional
+go, and never inferred merely from the human having said something about committing.
+When in doubt, wait or ask.
+
+The anchor conveys that gate 1 is cleared; it never manufactures or relocates gate 2.
+Concretely, the anchor must not instruct the driver to commit around the navigator,
+and must not instruct the navigator to "tell the driver to commit" — both relocate a
+command instead of removing one. Pair concurrence stays peer-to-peer: one seat
+proposes, the other concurs or blocks; nobody directs a commit, including the anchor.
+
+A driver that refuses to commit without authorization is doing its job correctly.
+The failure mode isn't refusing too readily — it's checking only whether an
+authorization exists and not what its terms are.
+
 ## TDD spine
 
 Preserve Gerold `/pair`'s discipline; distribute it across the two seats — do not water
