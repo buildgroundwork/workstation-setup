@@ -3,3 +3,4 @@ tags
 TODO
 
 **/.claude/settings.local.json
+*.local.md
