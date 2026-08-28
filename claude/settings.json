@@ -53,6 +53,7 @@
       "Bash(isend:*)",
       "Bash(iflag:*)",
       "Bash(ilist:*)",
+      "Read(~/.claude/data/inter-session/**)",
       "mcp__claude_ai_Gdrive_Gusto__create_file",
       "mcp__notiongusto__notion-fetch",
       "mcp__notiongusto__notion-search",
