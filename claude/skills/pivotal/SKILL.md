@@ -175,6 +175,26 @@ it down.
 - Refactoring means FOWLER-SENSE behavior-preserving change with tests green
   throughout (Extract Method/Variable/Class, Inline, Rename, Move, Replace Temp with
   Query, etc.). NOT rewrites, NOT new behavior, NOT "while we're here" scope.
+- **Searching for explicit-subject misuse means searching for identifier
+  EVALUATION, not the literal token "subject."** (Project convention: implied
+  subject only, never invoked explicitly just to force evaluation.) A `describe`
+  that aliases a `let` to `subject` (e.g. `subject { event }`) and then calls that
+  same identifier by its OWN NAME inside an example body (e.g. `expect { event }.to
+  ...`) is functionally an explicit subject call with zero token overlap on the
+  string "subject" — no grep for the word finds it. The correct predicate: does
+  evaluating this identifier trigger the SUT the way `subject` would, not does the
+  string "subject" appear.
+- **A mutation proves an assertion's target is reachable; it does not prove the
+  assertion discriminates between two mechanisms a single mutation perturbs
+  together.** E.g. an error message that interpolates both a specific-offender name
+  and a full roster of reserved names in one string: an assertion matching loosely
+  enough not to tell which part it's checking will still pass a mutation that drops
+  a name from the underlying list, since the name disappears from both
+  interpolations at once — the test fails for a coincidentally-correct reason
+  without the assertion ever being proven to discriminate. When a mutation could
+  plausibly touch two coupled mechanisms in one edit (one list/value feeding two
+  parts of one output, two branches sharing one input), mutate each independently
+  before concluding an assertion is load-bearing for either specifically.
 
 ## Context ownership
 
