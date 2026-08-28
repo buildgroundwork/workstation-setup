@@ -154,7 +154,8 @@
     "github@claude-plugins-official": true,
     "figma@claude-plugins-official": true,
     "ruby-lsp@claude-plugins-official": true,
-    "inter-session@inter-session": true
+    "inter-session@inter-session": true,
+    "fresh-eyes@gusto-claude-code": true
   },
   "extraKnownMarketplaces": {
     "inter-session": {

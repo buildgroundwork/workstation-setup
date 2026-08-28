@@ -153,3 +153,4 @@ export PATH="$JAVA_HOME/bin:$PATH"
 # mise activation must come LAST so its shims win PATH precedence (the postgres/java
 # prepends above were shadowing mise's per-directory ruby/node shims).
 source ~/.gusto/init.sh
+export PATH="$HOME/.local/bin:$PATH"
