@@ -151,9 +151,13 @@ seat's actual concurrence; reading a conditional concurrence as a bare one; and 
 anchor or navigator inventing a human gate the human never asked for, which freezes
 correct work.
 
-**`git push` stays gated on the human.** A commit is local and reversible; a push is
-outward-facing and is not. The pair may commit freely on mutual concurrence, and must
-not push without the human's word.
+**Push authority is whatever the human designates at kickoff.** A commit is local
+and reversible; a push is outward-facing and is not. Absent a designation, the pair
+may commit freely on mutual concurrence but must not push without the human's word.
+The human may instead designate a skill that governs push authority itself (e.g.
+`/pr-ownership`, under which the pair owns a PR end to end and push is pair-owned,
+only merge needing the human) — `/pivotal` doesn't bind to any specific such skill;
+it just carries whatever the human designated into each pair's kickoff.
 
 ## TDD spine
 
@@ -335,8 +339,9 @@ and resolves its own conflicts — same as a normal human pair would. The anchor
 coordinates and mediates escalations; it is not the merge point and does not decide
 integration order by default. A pair whose work interacts with another pair's talks
 to that pair DIRECTLY (per the open-communication rule); only a conflict neither pair
-can resolve between themselves escalates to the anchor. `git push` still needs the
-human; rebasing a local branch does not. Follow this repo's own conventions when
+can resolve between themselves escalates to the anchor. `git push` follows whatever
+push authority was designated at kickoff (see above); rebasing a local branch always
+stays the pair's own job regardless. Follow this repo's own conventions when
 rebasing — branch off `origin/main`, replant with `git rebase --onto`, never create
 merge commits — the same as any session would.
 
@@ -497,7 +502,10 @@ of what the resume-or-create logic below is doing with session identity.
    pair's sessions appear on `ilist`, before the navigator is given a task — never
    launch several pairs and batch kickoffs for later. A RESUMED session already
    carries its role from prior context and doesn't need to wait on this, but treat
-   "fresh vs. resumed" as a fact to check, not assume. Templates below.
+   "fresh vs. resumed" as a fact to check, not assume. If the human named a skill
+   governing push authority when they started this `/pivotal` run (e.g.
+   `/pr-ownership`), say so explicitly in each kickoff prompt; if they didn't, say
+   nothing and the default (pushing needs the human) holds. Templates below.
 
 ### Kickoff prompt — Navigator (opus, left pane)
 
@@ -518,8 +526,9 @@ of what the resume-or-create logic below is doing with session identity.
 > to actively agree; genuine disagreement blocks and you escalate to the anchor (bus
 > name `<repo>`). Your concurrence IS the commit gate — do not invent a human or
 > anchor sign-off on top of it — and if you concur conditionally, say so plainly so
-> the driver waits for the condition. Pushing, unlike committing, does need the
-> human. Your pair works in its own git worktree and branch; you manage your own
+> the driver waits for the condition. Push authority is whatever the anchor told you
+> at kickoff (default: pushing needs the human, unlike committing). Your pair works
+> in its own git worktree and branch; you manage your own
 > rebasing and talk directly to another pair if your work interacts with theirs,
 > escalating to the anchor only if you can't resolve a conflict between yourselves.
 > Keep the anchor informed of progress + commits, and tell it if you talk to another
@@ -551,8 +560,9 @@ of what the resume-or-create logic below is doing with session identity.
 > if you disagree, escalate to the anchor (bus name `<repo>`). You can also raise a
 > concern to the anchor directly. The navigator's concurrence is the commit gate: you
 > do NOT wait on the anchor or the human to authorize a commit, but a conditional
-> concur ("concur once you add X") is not a concur until X lands. Do not push without
-> the human's word. You manage your own rebasing onto the branch you were told to
+> concur ("concur once you add X") is not a concur until X lands. Push authority is
+> whatever the navigator/anchor told you at kickoff (default: pushing needs the
+> human's word). You manage your own rebasing onto the branch you were told to
 > integrate with; if a conflict involves another pair's work, talk to that pair
 > directly rather than routing through the anchor, and escalate to the anchor only if
 > the two of you can't resolve it. If your work might touch a file another pair could

@@ -62,6 +62,9 @@ is not a failure to route around.
 **Rebasing is expected, not exceptional.** Don't avoid a rebase because it's
 friction. A pair pushes its own rebases as part of normal PR maintenance (see
 `/pivotal`'s Worktree isolation for the mechanics of a pair managing its own branch).
+**Push is pair-owned, not human-gated, under this policy** — end-to-end ownership
+(above) includes the push that keeps a PR current; the human's role is merging it,
+not authorizing each push along the way.
 
 **Not retroactive.** A pre-existing stack of PRs built before this policy was in
 effect gets resolved under whatever model it was actually built under. This policy
@@ -79,11 +82,14 @@ didn't have the next unit ready — that is an anchor failure, not a pair failur
 
 The reason allocation doesn't need the human's sign-off is that it's reversible and
 cheap: reassigning work costs nothing if it turns out to be the wrong call, unlike a
-merge, a push, or a scope change. The line that actually needs the human is
-reversibility, not scale or importance — irreversible or outward-facing actions
-(merges, closing PRs, changing this policy itself, and design decisions a pair
-escalates because it can't resolve them) still need the human; deciding who works on
-what next does not. Checking "does this conflict with anything in flight" is the
+merge or a scope change. The line that actually needs the human is reversibility,
+not scale or importance — irreversible or outward-facing actions (merges, closing
+PRs, changing this policy itself, and design decisions a pair escalates because it
+can't resolve them) still need the human; deciding who works on what next does not,
+and neither does pushing (see "Rebasing is expected, not exceptional" above) — a
+push under this policy's branch-protection expectations is correctable by another
+push, not a one-way action the way a merge to `main` is. Checking "does this
+conflict with anything in flight" is the
 anchor's job to do before assigning, using the same non-conflicting-work test defined
 above for the cross-pair-dependency case — not something to defer to the human
 because asking feels safer. Asking when allocation was never the risky part just
