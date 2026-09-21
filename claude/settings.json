@@ -16,6 +16,8 @@
       "Bash(jq *)",
       "Bash(mkdir *)",
       "Bash(pbcopy *)",
+      "Bash(rm -f /private/tmp/*)",
+      "Bash(rm -rf /private/tmp/*)",
       "Bash(git status)",
       "Bash(git diff *)",
       "Bash(git log *)",
