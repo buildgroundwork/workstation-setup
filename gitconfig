@@ -4,7 +4,7 @@
   commitGraph = true
   whitespace = space-before-tab indent-with-non-tab tab-in-indent trailing-space
   untrackedCache=true
-  fsmonitor=true
+  fsmonitor=false
 [alias]
   st = status
   di = diff
@@ -41,7 +41,7 @@
 [branch]
   autosetupmerge = true
 [push]
-  default = tracking
+  default = simple
 [rebase]
   autosquash = true
 [format]
