@@ -129,21 +129,80 @@ available — not a vague "waiting on review," and not silence.
 
 ## When is a PR ready to merge
 
-Five conditions, all required:
+**Six** conditions, all required. Conditions 1, 2 and 4 are the team's own standard,
+stricter than the repo enforces. Condition 3 is the repo's. Condition 6 is GitHub's.
+Keep the three sources distinct: the ruleset is not yours to relax — and note that
+conditions 1 and 2 (a Gerold PR review AND a Fresh Eyes review, each bound to the
+CURRENT head commit) are ALSO not relaxable, by explicit standing rule. A PR does not
+merge without both, on the head. This is the one place the "your own standards are
+yours to relax" latitude does NOT apply: a stale Gerold or Fresh Eyes review — one
+bound to any SHA other than the current head — does not count, and its absence on the
+head blocks merge exactly as a failing required check would. If Fresh Eyes did not run
+on the head (e.g. it didn't auto-re-run after a rebase), the owning pair TRIGGERS it on
+the head (via the fresh-eyes skill's trigger mode / a manual CI build) and waits for
+the head-bound verdict; the PR is not ready until that verdict exists. "Old reviews are
+not acceptable" is the rule, stated by the human and binding.
 
 1. The Gerold-reviewed SHA equals the current head.
-2. The local-Fresh-Eyes-reviewed SHA equals the current head.
-3. Buildkite is passing on the current head.
+2. A **local Fresh Eyes review** (the fresh-eyes skill's `review` mode, run against
+   the working tree at the PR's current head) has been run and its findings driven to
+   zero. This is specifically the LOCAL review, NOT the CI Fresh Eyes check-run. The
+   CI check-run is a separate thing that gates only if the ruleset requires it (see
+   condition 3) and commonly returns a `requires_human_approval` routing object that
+   explicitly did not assess the code — that routing object does NOT satisfy this
+   condition. The point of condition 2 is that a local Fresh Eyes review actually ran
+   on the head and caught what Gerold structurally doesn't. A green (or routing) CI
+   check is not that review. Run it locally, on the head, and address the findings.
+3. **The required status checks are passing — read the ruleset to learn which those
+   are.** Don't infer it:
+
+       gh api repos/<org>/<repo>/rules/branches/main --jq \
+         '[.[] | select(.type=="required_status_checks")
+               | .parameters.required_status_checks]'
+
+   On one repo this returned exactly ONE context (`buildkite/<repo>` — the build that
+   compiles and runs the suite) while twelve other check-runs existed and gated
+   nothing. Both obvious substitutes for reading the ruleset are wrong, in opposite
+   directions: a count floor (`total >= 11`) is under-strict and is satisfied by a set
+   missing a required member; set-equality against `main` is over-strict and blocks on
+   checks with no authority. One API call settles it, and hardcoded expectations go
+   stale — this repo's check count changed twice in a single day when a new scanner
+   was added.
+
+   Two further traps on this surface:
+   - `/status` and `/check-runs` can be **disjoint**. On the repo above, the build
+     appeared only in `/status` while twelve security and review runs appeared only in
+     `/check-runs`, zero overlap. Scoring one is not scoring CI.
+   - Never read `/status`'s rollup `.state`. A top-level `failure` can be an unchecked
+     human checkbox while the real build is still pending. Read the per-context states.
+   - An absent check-run name is not evidence of anything until you know whether that
+     check is required. And "nothing is pending" does NOT mean "everything has
+     registered" — a check has been observed registering hours after every other
+     check on that head went terminal.
 4. Zero unaddressed PR comments — verified by a set difference on `in_reply_to_id`
    (root comment ids minus replied-to ids), never by a raw count. A count match can
    hide an unanswered finding when two replies land on one comment and none on
-   another.
+   another. **Count the population unfiltered first**: a filtered zero cannot
+   distinguish "nothing matched" from "no surface exists to match against."
 5. `main` is an ancestor of the PR's head (`git merge-base --is-ancestor origin/main
    <head>`), so merging stays a fast-forward or clean rebase and history stays
    linear. GitHub's `mergeable: true` does NOT establish this — `mergeable` only means
    "no textual conflicts"; `mergeStateStatus` (`mergeable_state`) can independently
    report `BLOCKED` (branch protection refusing) even while `mergeable` is true. Don't
    infer `mergeStateStatus` from `mergeable` — check it directly.
+6. **One approving review on the current head.** This is a native GitHub requirement
+   (`required_approving_review_count`), not a team convention, and a gate that omits
+   it reports PRs as "ready to merge" that GitHub will refuse. **A bot approval
+   satisfies it** — an auto-approving review bot counts, and a doc-only PR can close
+   this condition with no human involved at all. Read `reviewDecision`; don't predict
+   which you'll get from what other PRs received, since the tier is decided per-PR.
+
+**Two ruleset flags that change how you sequence work.** Read them once and remember
+them: `dismiss_stale_reviews_on_push` and `require_last_push_approval`. With these on,
+**any push destroys an existing approval — including a pure-replay rebase that a
+patch-id proves changed nothing.** GitHub does not consult patch-ids. So once a PR
+holds an approval, a rebase you could have skipped costs a re-approval; if a PR is
+approved and behind, ask before rebasing.
 
 **Any change to what commit the head points to invalidates conditions 1 and 2.**
 This includes rewrites (amend, rebase, squash, force-push) and simply appending a new
