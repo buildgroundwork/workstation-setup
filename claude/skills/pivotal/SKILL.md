@@ -199,6 +199,29 @@ it down.
   plausibly touch two coupled mechanisms in one edit (one list/value feeding two
   parts of one output, two branches sharing one input), mutate each independently
   before concluding an assertion is load-bearing for either specifically.
+- **RED for characterization work.** The spine above presumes there's production
+  code to write. Half of real pairing work doesn't fit that: adding coverage to code
+  that already exists, pinning behavior before a refactor, closing a measured
+  coverage gap. There's no GREEN to write there — the code is already green — but
+  RED still applies, inverted: write the example, run it, and if it passes on first
+  write, stop and ask why. Exactly one of these is true:
+  - The behavior is already covered elsewhere → report it, the unit may be
+    redundant. Name the existing example that covers it. If none can be named, keep
+    looking before concluding there is none.
+  - The example doesn't discriminate → fix the assertion; it would pass against
+    broken code too.
+  - It genuinely characterizes untested behavior → say which existing example would
+    have caught the same defect, and show that none does.
+
+  The navigator gates this the same way it gates red→green: a driver reporting
+  "written and green" without saying which of the three holds has not completed
+  RED. Mutation-verification is a second, independent check, not a substitute for
+  this one — mutation proves the example CAN fail (power); this proves the example
+  is NEEDED (non-redundancy). A passing-on-first-write example that also mutation-
+  tests as discriminating can still be a pure duplicate of coverage that already
+  exists; only naming the existing example (or failing to find one) settles that.
+  If a unit has no plausible RED step at all, that's a signal about the unit — the
+  pair should push back rather than write it.
 
 ## Context ownership
 
