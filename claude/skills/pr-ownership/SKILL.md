@@ -52,12 +52,16 @@ its own two branches without losing track of which commits are whose; two differ
 pairs coordinating a shared unmerged dependency is a different, riskier problem, and
 the anchor solving it by reallocating avoids it entirely rather than managing it.
 
-**Ceiling: three unmerged PRs with dependencies between them.** Past that, if the
-anchor can't find genuinely non-conflicting work to hand the pair, THE PAIR IS
-BLOCKED. Say so plainly — to the anchor, and let the anchor decide what's next —
-rather than inventing more stacked work to stay busy or quietly sitting idle without
-reporting it. Being blocked and saying so is the correct outcome at the ceiling; it
-is not a failure to route around.
+**Ceiling: three unmerged PRs with dependencies between them.** The ceiling is about
+ENTANGLEMENT, not the raw count of open PRs — a PR touching files no other open PR
+touches adds a review to the queue, not a resolution burden, and doesn't count
+against this ceiling on its own. It's specifically about PRs that depend on each
+other (the same-pair exception above, or anything else creating a chain a pair has to
+track). Past three dependent, unmerged PRs, if the anchor can't find genuinely
+non-conflicting work to hand the pair, THE PAIR IS BLOCKED. Say so plainly — to the
+anchor, and let the anchor decide what's next — rather than inventing more stacked
+work to stay busy or quietly sitting idle without reporting it. Being blocked and
+saying so is the correct outcome at the ceiling; it is not a failure to route around.
 
 **Rebasing is expected, not exceptional.** Don't avoid a rebase because it's
 friction. A pair pushes its own rebases as part of normal PR maintenance (see
