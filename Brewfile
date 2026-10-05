@@ -9,6 +9,7 @@ cask "ccmenu"
 
 brew "awscli"
 brew "bat"
+brew "fswatch"
 brew "fzf"
 brew "git"
 brew "jq"
