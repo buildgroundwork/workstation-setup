@@ -61,6 +61,7 @@ set -euo pipefail
 
 PLUGIN_CACHE="$HOME/.claude/plugins/cache/gusto-claude-code/claude-tmux-attention"
 STATUS_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/status"
+PANES_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/panes"
 LOCK_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
 
 die() { printf 'istatus: %s\n' "$*" >&2; exit 1; }
@@ -73,6 +74,23 @@ mkdir -p "$STATUS_DIR"
 STATUS_FILE="$STATUS_DIR/${sid}.json"
 LOCK_FILE="$LOCK_DIR/status-${sid}.lock"
 [[ -f "$STATUS_FILE" ]] || printf '{"summary":"","decisions":[]}' > "$STATUS_FILE"
+
+# Record "this pane currently holds this session_id", unconditionally, on
+# every call — the only data source istatus-resolve-pane.sh needs. Earlier
+# versions resolved a pane's occupant by scanning claude-tmux-attention's
+# debug.log, but that log only exists when CLAUDE_TMUX_ATTENTION_DEBUG=1 is
+# set in the session's env — an opt-in debug flag, not a guarantee, and a
+# session started before that var landed in settings.json never gets it
+# (settings.json changes don't apply mid-session). This pointer has no such
+# dependency: every istatus call already carries TMUX_PANE and sid for free.
+# Single flat file, overwritten atomically; last-writer-wins is fine since
+# only one session occupies a given pane at a time.
+if [[ -n "${TMUX_PANE:-}" ]]; then
+  mkdir -p "$PANES_DIR"
+  pane_tmp=$(mktemp "${PANES_DIR}/.XXXXXX")
+  printf '%s' "$sid" > "$pane_tmp"
+  mv "$pane_tmp" "${PANES_DIR}/${TMUX_PANE}.session_id"
+fi
 
 # Same locking pattern as attention-state.sh: flock when available, a
 # mkdir-based spinlock otherwise. Guards the read-modify-write against a
