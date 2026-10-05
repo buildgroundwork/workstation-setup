@@ -36,7 +36,7 @@ WINDOW=$(tmux display-message -t "$TARGET_PANE" -p '#{window_id}')
 # Refuse a duplicate: a window already running istatus-sidebar.sh for this
 # exact pane means a sidebar is already attached.
 existing=$(tmux list-panes -t "$WINDOW" -F '#{pane_id} #{pane_start_command}' 2>/dev/null \
-  | grep -F "istatus-sidebar.sh $TARGET_PANE" || true)
+  | grep -F "istatus-sidebar.sh \"$TARGET_PANE\"" || true)
 if [[ -n "$existing" ]]; then
   die "window $WINDOW already has a sidebar for pane $TARGET_PANE"
 fi
