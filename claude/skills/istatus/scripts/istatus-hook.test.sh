@@ -57,6 +57,26 @@ complete_tool() {
     | "$SCRIPT" remove
 }
 
+# start <pane> <session_id> — feed a SessionStart payload for a pane.
+start() {
+  local pane="$1" sid="$2"
+  printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"SessionStart","source":"startup"}' "$sid" \
+    | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" start
+}
+
+# arm <target_pane> <prompt> — run as the hub (TMUX_PANE is the hub's pane, %1,
+# not the target's) to record that a prompt was dispatched to the target pane.
+arm() {
+  printf '%s' "$2" | TMUX=fake TMUX_PANE=%1 "$SCRIPT" arm "$1"
+}
+
+# stop <pane> <session_id> — feed a Stop payload (the end of a turn) for a pane.
+stop() {
+  local pane="$1" sid="$2"
+  printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"Stop"}' "$sid" \
+    | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" stop
+}
+
 # seed <session_id> <json> — write a pre-existing status file for a session.
 seed() {
   mkdir -p "$DIR/status"
@@ -197,6 +217,51 @@ assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
   "add waits while another writer holds the session lock"
 echo > "$DIR/release"
 wait "$holder" "$adder"
+teardown
+
+# ── a new session announces which pane it occupies ──────────────────────────
+setup
+start %50 sess-2
+assert_eq "$(pointer_of %50)" "sess-2" \
+  "start writes the pane occupancy pointer"
+teardown
+
+# ── the hub dispatching a prompt is recorded on the target session ───────────
+setup
+start %50 sess-2
+arm %50 "run the migration"
+assert_eq "$(items_of sess-2 '{pane, items: [.items[] | {kind, state, priority, source, text}]}')" \
+  '{"pane":"%50","items":[{"kind":"notice","state":"read","priority":"low","source":"hub.dispatched","text":"run the migration"}]}' \
+  "arm records a dispatched notice on the target pane's session"
+teardown
+
+# ── a new dispatch supersedes earlier hub items and leaves the rest ──────────
+setup
+start %50 sess-2
+seed sess-2 "$(jq -c '.items += [{"id":"r1","kind":"notice","text":"old task","source":"hub.ready","state":"unread","priority":"normal","created_at":"2026-10-05T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
+arm %50 "new task"
+assert_eq "$(items_of sess-2 '[.items[] | {source, text}]')" \
+  '[{"source":null,"text":"pick a name"},{"source":"hub.dispatched","text":"new task"}]' \
+  "arm supersedes earlier hub items and keeps other notices"
+teardown
+
+# ── a dispatched task finishing raises an unread ready notice ────────────────
+setup
+start %50 sess-2
+arm %50 "run the migration"
+stop %50 sess-2
+assert_eq "$(items_of sess-2 '[.items[] | {source, state, priority, text}]')" \
+  '[{"source":"hub.ready","state":"unread","priority":"normal","text":"run the migration"}]' \
+  "stop turns a dispatched notice into an unread ready notice"
+teardown
+
+# ── a ready notice the human already deferred is not raised again ────────────
+setup
+seed sess-2 "$(jq -c '.items += [{"id":"r2","kind":"notice","text":"done task","source":"hub.ready","state":"read","priority":"normal","created_at":"2026-10-05T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
+stop %50 sess-2
+assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
+  '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"read"}]' \
+  "stop does not re-raise a deferred ready notice"
 teardown
 
 # ── a top-level tool finishing clears a pending permission prompt ────────────

@@ -17,6 +17,28 @@
 #     auto-approved tools finish while the parent's prompt is still pending.
 #     A session with no status file is a silent no-op, since this fires on
 #     every tool call and most sessions never block.
+#
+#   istatus-hook.sh start
+#     Records which session occupies this pane (panes/<pane>.session_id) and
+#     nothing else; it creates no status file. Wired on SessionStart.
+#
+#   istatus-hook.sh arm <target-pane>   (prompt on stdin; run by the hub)
+#     Adds a read, low-priority "hub.dispatched" notice, whose text is the
+#     prompt, to the session that occupies <target-pane>, and records
+#     <target-pane> as the file's pane. Any earlier item whose source starts
+#     with "hub." is removed first, so a re-dispatch supersedes the last one;
+#     other notices and blocking items are untouched. The session is found through the
+#     pane's occupancy pointer, so it is a silent no-op when there is none: a
+#     session that was already running before start was wired may not have one
+#     yet. Never reads TMUX_PANE, which here is the hub's pane.
+#
+#   istatus-hook.sh stop
+#     Wired on Stop, in the dispatched session itself. Turns its
+#     "hub.dispatched" notice into an unread, normal-priority "hub.ready" one
+#     (same text, fresh created_at); does nothing if there is no such notice.
+#     Stop does not fire when a turn is interrupted with Esc, so an
+#     interrupted dispatch stays a read "hub.dispatched" notice until the next
+#     arm replaces it. A ready notice the human deferred (read) is left alone.
 
 set -euo pipefail
 
@@ -36,32 +58,72 @@ PANES_DIR="$ATTENTION_DIR/panes"
 die() { printf 'istatus-hook: %s\n' "$*" >&2; exit 1; }
 
 cmd_add() {
-  local payload sid text source
-  payload=$(cat)
-  sid=$(jq -r '.session_id // empty' <<<"$payload")
-  [[ -n "$sid" ]] || die "no session_id in payload"
-  text=$(jq -r '.message // .tool_input.questions[0].question // empty' <<<"$payload")
-  source=$(jq -r '.tool_name // empty' <<<"$payload")
+  local text source
+  read_payload
+  text=$(jq -r '.message // .tool_input.questions[0].question // empty' <<<"$PAYLOAD")
+  source=$(jq -r '.tool_name // empty' <<<"$PAYLOAD")
 
   mkdir -p "$STATUS_DIR"
-  LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
-  with_lock record_blocking_item "$sid" "$text" "$source"
+  LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"
+  with_lock record_blocking_item "$SESSION_ID" "$text" "$source"
 }
 
 cmd_remove() {
-  local payload sid tool agent status_file
-  payload=$(cat)
-  sid=$(jq -r '.session_id // empty' <<<"$payload")
-  [[ -n "$sid" ]] || die "no session_id in payload"
-  tool=$(jq -r '.tool_name // empty' <<<"$payload")
-  agent=$(jq -r '.agent_id // empty' <<<"$payload")
+  local tool agent status_file
+  read_payload
+  tool=$(jq -r '.tool_name // empty' <<<"$PAYLOAD")
+  agent=$(jq -r '.agent_id // empty' <<<"$PAYLOAD")
 
   # Checked before taking the lock so a session that never blocks, which is
   # most of them, doesn't get a lock file created on every tool call.
-  status_file="$STATUS_DIR/${sid}.json"
+  status_file="$STATUS_DIR/${SESSION_ID}.json"
   [[ -f "$status_file" ]] || return 0
-  LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
+  LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"
   with_lock clear_resolved_items "$status_file" "$tool" "$agent"
+}
+
+cmd_start() {
+  read_payload
+  record_pane_occupant "$SESSION_ID"
+}
+
+cmd_stop() {
+  local status_file
+  read_payload
+
+  # Stop fires at the end of every turn in every session, so both checks run
+  # before taking the lock: no status file, or no dispatched item in it, means
+  # there is nothing to do. Writers replace the file atomically, so an unlocked
+  # read sees a whole file; at worst it misses an arm that lands right after.
+  status_file="$STATUS_DIR/${SESSION_ID}.json"
+  [[ -f "$status_file" ]] || return 0
+  has_dispatched_item "$status_file" || return 0
+  LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"
+  with_lock raise_ready_notice "$status_file"
+}
+
+# Run by the hub, not by the target session, so TMUX_PANE here is the hub's
+# pane and must never be read: the target is the argument.
+cmd_arm() {
+  local target="$1" prompt pointer sid
+  prompt=$(cat)
+  pointer="$PANES_DIR/${target}.session_id"
+  [[ -n "$target" && -n "$prompt" && -f "$pointer" ]] || return 0
+  sid=$(<"$pointer")
+  [[ -n "$sid" ]] || return 0
+
+  mkdir -p "$STATUS_DIR"
+  LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
+  with_lock record_dispatch "$sid" "$target" "$prompt"
+}
+
+# Reads the hook payload from stdin into PAYLOAD and its session_id into
+# SESSION_ID. Globals rather than a subshell capture, so a missing session_id
+# can die the whole invocation.
+read_payload() {
+  PAYLOAD=$(cat)
+  SESSION_ID=$(jq -r '.session_id // empty' <<<"$PAYLOAD")
+  [[ -n "$SESSION_ID" ]] || die "no session_id in payload"
 }
 
 # The read-modify-write for add. Runs under the session lock.
@@ -78,6 +140,38 @@ record_blocking_item() {
   '
 
   record_pane_occupant "$sid"
+}
+
+# The read-modify-write for arm. Runs under the session lock.
+record_dispatch() {
+  local sid="$1" pane="$2" prompt="$3" status_file id
+  status_file="$STATUS_DIR/${sid}.json"
+  id=$(date -u +%Y%m%dT%H%M%SZ)-$$
+  [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
+  rewrite_status "$status_file" \
+    --arg id "$id" --arg text "$prompt" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg pane "$pane" '
+    .pane = $pane
+    | .items |= map(select((.source // "") | startswith("hub.") | not))
+    | .items += [ { id: $id, kind: "notice", text: $text, source: "hub.dispatched",
+                    state: "read", priority: "low", created_at: $ts } ]
+  '
+}
+
+has_dispatched_item() {
+  jq -e '[.items[] | select(.source == "hub.dispatched")] | length > 0' "$1" >/dev/null 2>&1
+}
+
+# The read-modify-write for stop. Runs under the session lock. Phase lives in
+# `source`, not in read/unread: a ready notice the human deferred is read but
+# is not dispatched, so it must not be raised again on the next Stop.
+raise_ready_notice() {
+  rewrite_status "$1" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    .items |= map(
+      if .source == "hub.dispatched"
+      then .source = "hub.ready" | .state = "unread" | .priority = "normal" | .created_at = $ts
+      else . end)
+  '
 }
 
 # The read-modify-write for remove. Runs under the session lock.
@@ -146,5 +240,8 @@ record_pane_occupant() {
 case "${1:-}" in
   add)    cmd_add ;;
   remove) cmd_remove ;;
-  *)      die "usage: istatus-hook.sh add|remove" ;;
+  start)  cmd_start ;;
+  arm)    cmd_arm "${2:-}" ;;
+  stop)   cmd_stop ;;
+  *)      die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop" ;;
 esac
