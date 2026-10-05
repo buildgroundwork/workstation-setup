@@ -184,6 +184,21 @@ assert_eq "$(printf 'not json' | "$SCRIPT" add 2>/dev/null; echo "rc=$?")" "rc=0
   "a malformed payload exits 0 with nothing on stdout"
 teardown
 
+# ── a write waits for the session lock istatus.sh also takes ─────────────────
+setup
+mkfifo "$DIR/release"
+( flock -x 9; read -r _ < "$DIR/release" ) 9>"$DIR/status-sess-1.lock" &
+holder=$!
+sleep 0.2
+add %42 sess-1 "Claude needs your permission to use Bash" &
+adder=$!
+sleep 0.3
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
+  "add waits while another writer holds the session lock"
+echo > "$DIR/release"
+wait "$holder" "$adder"
+teardown
+
 # ── a top-level tool finishing clears a pending permission prompt ────────────
 setup
 add %42 sess-1 "Claude needs your permission to use Bash"
