@@ -20,6 +20,15 @@
 
 set -euo pipefail
 
+# A hook must never break or pollute the session it runs in. A non-zero exit
+# surfaces as a hook error (and exit 2 can block the action), and stdout on
+# exit 0 is injected into Claude's context for some events, so: send stdout
+# nowhere and force exit 0 on the way out. The work above still fails fast
+# under set -e; at worst a failure costs a missed item. stderr stays for
+# anyone running the script by hand.
+exec >/dev/null
+trap 'exit 0' EXIT
+
 STATUS_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/status"
 PANES_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/panes"
 

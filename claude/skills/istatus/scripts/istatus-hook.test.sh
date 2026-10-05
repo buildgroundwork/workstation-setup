@@ -178,6 +178,12 @@ assert_eq "$(complete_tool sess-9 Bash 2>&1; echo "rc=$?")" "rc=0" \
   "remove for a session with no status file is a silent no-op"
 teardown
 
+# ── a hook failure never reaches the session ─────────────────────────────────
+setup
+assert_eq "$(printf 'not json' | "$SCRIPT" add 2>/dev/null; echo "rc=$?")" "rc=0" \
+  "a malformed payload exits 0 with nothing on stdout"
+teardown
+
 # ── a top-level tool finishing clears a pending permission prompt ────────────
 setup
 add %42 sess-1 "Claude needs your permission to use Bash"
