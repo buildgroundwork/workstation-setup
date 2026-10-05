@@ -10,6 +10,7 @@
 set -euo pipefail
 
 STATUS_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/status"
+PANES_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/panes"
 
 die() { printf 'istatus-hook: %s\n' "$*" >&2; exit 1; }
 
@@ -25,10 +26,27 @@ cmd_add() {
   id=$(date -u +%Y%m%dT%H%M%SZ)-$$
   [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
   tmp=$(mktemp "${status_file}.XXXXXX")
-  jq --arg id "$id" --arg text "$message" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
-    .items += [ { id: $id, kind: "blocking", text: $text, state: "unread", created_at: $ts } ]
+  jq --arg id "$id" --arg text "$message" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --arg pane "${TMUX_PANE:-}" '
+    .pane = $pane
+    | .items += [ { id: $id, kind: "blocking", text: $text, state: "unread", created_at: $ts } ]
   ' "$status_file" > "$tmp" || { rm -f "$tmp"; die "failed to record item"; }
   mv "$tmp" "$status_file"
+
+  record_pane_occupant "$sid"
+}
+
+# Records "this pane currently holds this session_id" so a consumer can trust
+# the status file only while the pointer still names its session. Same pointer
+# istatus.sh writes; the hook writes it too because a session can block before
+# it ever calls istatus.
+record_pane_occupant() {
+  [[ -n "${TMUX_PANE:-}" ]] || return 0
+  local pane_tmp
+  mkdir -p "$PANES_DIR"
+  pane_tmp=$(mktemp "${PANES_DIR}/.XXXXXX")
+  printf '%s' "$1" > "$pane_tmp"
+  mv "$pane_tmp" "${PANES_DIR}/${TMUX_PANE}.session_id"
 }
 
 case "${1:-}" in

@@ -44,6 +44,14 @@ items_of() {
   jq -c "$2" "$file"
 }
 
+# pointer_of <pane> -> the session id the pane's occupancy pointer names, or
+# nothing when the pointer file is absent.
+pointer_of() {
+  local file="$DIR/panes/$1.session_id"
+  [[ -f "$file" ]] || return 0
+  cat "$file"
+}
+
 assert_eq() {
   local got="$1" want="$2" label="$3"
   if [[ "$got" == "$want" ]]; then
@@ -70,6 +78,20 @@ add %42 sess-1 "Claude needs your permission to use Bash"
 assert_eq "$(items_of sess-1 '{summary, kinds: [.items[].kind]}')" \
   '{"summary":"working on X","kinds":["notice","blocking"]}' \
   "add into an existing status file keeps the summary and appends"
+teardown
+
+# ── add records the pane the session lives in ────────────────────────────────
+setup
+add %42 sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(items_of sess-1 '.pane')" '"%42"' \
+  "add records the pane in the status file"
+teardown
+
+# ── add records which session occupies the pane ──────────────────────────────
+setup
+add %42 sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(pointer_of %42)" "sess-1" \
+  "add writes the pane occupancy pointer"
 teardown
 
 echo "$PASS passed, $FAIL failed"
