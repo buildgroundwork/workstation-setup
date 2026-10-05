@@ -4,8 +4,10 @@
 #
 # Usage (wired as a hook command; payload is the hook JSON on stdin):
 #   istatus-hook.sh add
-#     Adds a "blocking" item, unread, whose text is the payload's `message`,
-#     to status/<session_id>.json.
+#     Adds a "blocking" item, unread, to status/<session_id>.json. Its text is
+#     the payload's `message` (a permission prompt) or, failing that, the first
+#     question of an AskUserQuestion menu; `source` is the payload's tool_name
+#     (empty for a permission prompt).
 
 set -euo pipefail
 
@@ -15,21 +17,22 @@ PANES_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/panes"
 die() { printf 'istatus-hook: %s\n' "$*" >&2; exit 1; }
 
 cmd_add() {
-  local payload sid message id tmp status_file
+  local payload sid text source id tmp status_file
   payload=$(cat)
   sid=$(jq -r '.session_id // empty' <<<"$payload")
   [[ -n "$sid" ]] || die "no session_id in payload"
-  message=$(jq -r '.message // empty' <<<"$payload")
+  text=$(jq -r '.message // .tool_input.questions[0].question // empty' <<<"$payload")
+  source=$(jq -r '.tool_name // empty' <<<"$payload")
 
   mkdir -p "$STATUS_DIR"
   status_file="$STATUS_DIR/${sid}.json"
   id=$(date -u +%Y%m%dT%H%M%SZ)-$$
   [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
   tmp=$(mktemp "${status_file}.XXXXXX")
-  jq --arg id "$id" --arg text "$message" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-     --arg pane "${TMUX_PANE:-}" '
+  jq --arg id "$id" --arg text "$text" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --arg pane "${TMUX_PANE:-}" --arg source "$source" '
     .pane = $pane
-    | .items += [ { id: $id, kind: "blocking", text: $text, state: "unread", created_at: $ts } ]
+    | .items += [ { id: $id, kind: "blocking", text: $text, source: $source, state: "unread", created_at: $ts } ]
   ' "$status_file" > "$tmp" || { rm -f "$tmp"; die "failed to record item"; }
   mv "$tmp" "$status_file"
 

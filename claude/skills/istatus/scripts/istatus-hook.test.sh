@@ -30,6 +30,14 @@ add() {
     | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" add
 }
 
+# ask_question <pane> <session_id> <question> — feed a PreToolUse payload for an
+# AskUserQuestion menu (tool-use events carry no `message` field).
+ask_question() {
+  local pane="$1" sid="$2" question="$3"
+  printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"%s","header":"h","options":[],"multiSelect":false}]}}' "$sid" "$question" \
+    | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" add
+}
+
 # seed <session_id> <json> — write a pre-existing status file for a session.
 seed() {
   mkdir -p "$DIR/status"
@@ -92,6 +100,22 @@ setup
 add %42 sess-1 "Claude needs your permission to use Bash"
 assert_eq "$(pointer_of %42)" "sess-1" \
   "add writes the pane occupancy pointer"
+teardown
+
+# ── an AskUserQuestion menu records what raised it ───────────────────────────
+setup
+ask_question %42 sess-1 "Which database?"
+assert_eq "$(items_of sess-1 '[.items[] | {kind, source}]')" \
+  '[{"kind":"blocking","source":"AskUserQuestion"}]' \
+  "AskUserQuestion PreToolUse records what raised the block"
+teardown
+
+# ── an AskUserQuestion menu shows the question being asked ───────────────────
+setup
+ask_question %42 sess-1 "Which database?"
+assert_eq "$(items_of sess-1 '[.items[] | {kind, text}]')" \
+  '[{"kind":"blocking","text":"Which database?"}]' \
+  "AskUserQuestion PreToolUse records the question as the item text"
 teardown
 
 echo "$PASS passed, $FAIL failed"
