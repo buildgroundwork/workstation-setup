@@ -36,6 +36,13 @@
 #     wired can still name its previous occupant. Never reads TMUX_PANE,
 #     which here is the hub's pane.
 #
+#   istatus-hook.sh viewed <target-pane>   (run by whoever looked at the pane)
+#     Marks the unread "hub.ready" notices of the session that occupies
+#     <target-pane> read. Decide notices and blocking items are never touched,
+#     since looking at a pane does not answer them. Like arm it finds the
+#     session through the pane's pointer, is a silent no-op without one, and
+#     never reads TMUX_PANE. It takes no lock unless there is something to mark.
+#
 #   istatus-hook.sh stop
 #     Wired on Stop, in the dispatched session itself. Turns its
 #     "hub.dispatched" notice into an unread, normal-priority "hub.ready" one
@@ -143,16 +150,43 @@ cmd_stop() {
 # Run by the hub, not by the target session, so TMUX_PANE here is the hub's
 # pane and must never be read: the target is the argument.
 cmd_arm() {
-  local target="$1" prompt pointer sid
+  local target="$1" prompt sid
   prompt=$(cat)
-  pointer="$PANES_DIR/${target}.session_id"
-  [[ -n "$target" && -n "$prompt" && -f "$pointer" ]] || return 0
-  sid=$(<"$pointer")
-  [[ -n "$sid" ]] || return 0
+  [[ -n "$prompt" ]] || return 0
+  sid=$(session_in_pane "$target") || return 0
 
   mkdir -p "$STATUS_DIR"
   LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
   with_lock record_dispatch "$sid" "$target" "$prompt"
+}
+
+# Run by whoever looked at the target pane (the focus hook, the popup jump, the
+# hub reading a result back), not by its session, so like arm it never reads
+# TMUX_PANE: the target is the argument. Marks the session's finished dispatch
+# notices read. Decide notices and blocking items are never touched, since
+# looking at a pane does not answer them.
+cmd_viewed() {
+  local target="$1" sid status_file
+  sid=$(session_in_pane "$target") || return 0
+
+  # Checked before taking the lock: a focus event fires constantly, and almost
+  # always there is no unread finished dispatch to mark.
+  status_file="$STATUS_DIR/${sid}.json"
+  [[ -f "$status_file" ]] || return 0
+  has_unread_ready_item "$status_file" || return 0
+  LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
+  with_lock mark_ready_read "$status_file"
+}
+
+# The session id that the pane's occupancy pointer names. Fails when the pane
+# is empty or has no pointer, so callers treat "nobody known there" as a no-op.
+session_in_pane() {
+  local pane="$1" pointer sid
+  pointer="$PANES_DIR/${pane}.session_id"
+  [[ -n "$pane" && -f "$pointer" ]] || return 1
+  sid=$(<"$pointer")
+  [[ -n "$sid" ]] || return 1
+  printf '%s' "$sid"
 }
 
 # Reads the hook payload from stdin into PAYLOAD and its session_id into
@@ -199,12 +233,15 @@ record_dispatch() {
   '
 }
 
-has_blocking_item() {
-  jq -e '[.items[] | select(.kind == "blocking")] | length > 0' "$1" >/dev/null 2>&1
-}
+has_blocking_item() { has_item "$1" '.kind == "blocking"'; }
+has_unread_ready_item() { has_item "$1" '.source == "hub.ready" and .state == "unread"'; }
+has_dispatched_item() { has_item "$1" '.source == "hub.dispatched"'; }
 
-has_dispatched_item() {
-  jq -e '[.items[] | select(.source == "hub.dispatched")] | length > 0' "$1" >/dev/null 2>&1
+# has_item <status_file> <jq predicate> — does any item satisfy the predicate?
+# Used for the cheap unlocked checks before a hot-path hook takes the lock. A
+# file jq cannot read (a legacy file with no items) counts as having none.
+has_item() {
+  jq -e "[.items[] | select($2)] | length > 0" "$1" >/dev/null 2>&1
 }
 
 # The read-modify-write for stop. Runs under the session lock. Phase lives in
@@ -216,6 +253,14 @@ raise_ready_notice() {
       if .source == "hub.dispatched"
       then .source = "hub.ready" | .state = "unread" | .priority = "normal" | .created_at = $ts
       else . end)
+  '
+}
+
+# The read-modify-write for viewed. Runs under the session lock.
+mark_ready_read() {
+  rewrite_status "$1" '
+    .items |= map(if .source == "hub.ready" and .state == "unread"
+                  then .state = "read" else . end)
   '
 }
 
@@ -308,5 +353,6 @@ case "${1:-}" in
   start)  cmd_start ;;
   arm)    cmd_arm "${2:-}" ;;
   stop)   cmd_stop ;;
-  *)      die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop" ;;
+  viewed) cmd_viewed "${2:-}" ;;
+  *)      die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop|viewed <pane>" ;;
 esac

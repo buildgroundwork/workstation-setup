@@ -99,6 +99,12 @@ other_tool() {
     | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" add
 }
 
+# viewed <target_pane> — run as the hub or a focus hook (TMUX_PANE is not the
+# target's) to record that the target pane's result has been looked at.
+viewed() {
+  TMUX=fake TMUX_PANE=%1 "$SCRIPT" viewed "$1" </dev/null
+}
+
 # seed <session_id> <json> — write a pre-existing status file for a session.
 seed() {
   mkdir -p "$DIR/status"
@@ -375,6 +381,16 @@ stop %50 sess-2
 assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
   '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"read"}]' \
   "stop leaves a status file with no dispatched notice alone"
+teardown
+
+# ── looking at a pane marks its finished dispatch read ───────────────────────
+setup
+start %50 sess-2
+seed sess-2 "$(jq -c '.items += [{"id":"r1","kind":"notice","text":"done task","source":"hub.ready","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
+viewed %50
+assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
+  '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"read"}]' \
+  "viewed marks a ready notice read and leaves a decide notice unread"
 teardown
 
 # ── a top-level tool finishing clears a pending permission prompt ────────────
