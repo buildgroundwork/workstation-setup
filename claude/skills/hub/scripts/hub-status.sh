@@ -12,12 +12,13 @@
 #                          project root: context size (sum of the last assistant
 #                          message's cache_read + cache_creation + input tokens)
 #                          and recency (file mtime)
-#   3. attention-state   — claude-tmux-attention's `list` (the published consumer
-#                          API): the authoritative working/waiting signal when
-#                          the notifier hooks are installed. Degrades to a
-#                          recency heuristic when the state file is empty/absent.
+#   3. the istatus inbox — istatus-inbox.sh list: which live sessions are
+#                          blocked, flagged, ready or dispatched. The
+#                          authoritative signal when the istatus hooks are
+#                          installed. Degrades to a recency heuristic when
+#                          nothing is recorded.
 #
-# State precedence: attention-state `kind` wins; else mtime heuristic.
+# State precedence: the inbox's state wins; else mtime heuristic.
 # Cold sessions (transcript untouched > COLD_MIN) are folded into one count line.
 #
 # Pure read. No mutation of any session, the state file, or tmux.
@@ -30,7 +31,7 @@ WORKING_MIN="${HUB_WORKING_MIN:-60}"                # transcript touched <= this
 COLD_MIN="${HUB_COLD_MIN:-1440}"                    # transcript untouched > this (min) => cold (24h)
 MAX_LINES="${HUB_MAX_LINES:-12}"                    # pane never grows past this; working rows past the budget fold to "+N more working"
 PROJECTS_DIR="$HOME/.claude/projects"
-STATE_SCRIPT="$(find "$HOME/.claude" "$HOME/workspace/claude-code" -name attention-state.sh 2>/dev/null | head -1)"
+ISTATUS_SCRIPTS="$SCRIPT_DIR/../../istatus/scripts"
 
 # cwd -> the project dir slug Claude uses (every non-alphanumeric becomes '-').
 project_slug() { echo "$1" | sed 's/[^a-zA-Z0-9]/-/g'; }
@@ -51,35 +52,28 @@ transcript_context() {
              + (.message.usage.input_tokens//0)' 2>/dev/null
 }
 
-# A snapshot of the attention state as "session<TAB>kind" lines (bash 3.2 has
-# no associative arrays — macOS ships 3.2). Empty if the state script or file
-# is unavailable. attn_kind() looks a session up in it.
+# A snapshot of the istatus state as "tmux session<TAB>label" lines (bash 3.2
+# has no associative arrays — macOS ships 3.2). Empty if the inbox has nothing
+# or fails. attn_kind() looks a tmux session up in it.
 ATTN=""
 load_attention() {
-  [[ -n "$STATE_SCRIPT" && -x "$STATE_SCRIPT" ]] || return 0
-  local json
-  json=$("$STATE_SCRIPT" list 2>/dev/null) || return 0
-  # The plugin's `states` is a SET per pane; this dashboard wants a single
-  # label per session. Project the highest-priority active state, in the SAME
-  # urgency order the plugin's status.sh uses (0.2.4):
-  #   human.requested > attention.needed > task.ready > task.dispatched.
-  # human.requested (an agent flagged the operator via iflag) and
-  # attention.needed (blocked on a prompt) are the two "needs me" signals that
-  # matter in the peer-graph era; the task.* pair is legacy dispatch, rarely set
-  # now that agents message peer-to-peer, but still projected if present.
-  ATTN=$(jq -r '
-    .[] | select(.tmux_session != "")
-    | (.states // []) as $s
-    | ( if   ($s | index("human.requested"))  then "human.requested"
-        elif ($s | index("attention.needed")) then "attention.needed"
-        elif ($s | index("task.ready"))       then "task.ready"
-        elif ($s | index("task.dispatched"))  then "task.dispatched"
-        else "" end ) as $kind
-    | "\(.tmux_session)\t\($kind)"
-  ' <<<"$json" 2>/dev/null || true)
+  # This dashboard wants a single label per tmux session. Each inbox row
+  # already carries its session's top state; the rows are sorted here, most
+  # urgent first (blocked, flagged, ready, dispatched), so a tmux session that
+  # holds several Claude sessions gets the highest, because attn_kind takes the
+  # first line for it. The labels are the dashboard's own vocabulary: a blocked
+  # session is "waiting" here.
+  ATTN=$("$ISTATUS_SCRIPTS/istatus-inbox.sh" list 2>/dev/null | jq -r '
+    def dashboard_label: { blocked: "waiting", flagged: "flagged", ready: "ready", dispatched: "dispatched" }[.state];
+    def urgency: { blocked: 0, flagged: 1, ready: 2, dispatched: 3 }[.state];
+    [ .[] | select(.state != "" and .tmux_session != "") ]
+    | sort_by(urgency)
+    | .[]
+    | "\(.tmux_session)\t\(dashboard_label)"
+  ' 2>/dev/null || true)
 }
 
-# attn_kind <session-name> -> its kind, or empty.
+# attn_kind <session-name> -> its label, or empty.
 attn_kind() {
   [[ -n "$ATTN" ]] || return 0
   printf '%s\n' "$ATTN" | awk -F'\t' -v s="$1" '$1==s{print $2; exit}'
@@ -90,10 +84,7 @@ resolve_state() {
   local name="$1" age="$2" kind
   kind=$(attn_kind "$name")
   case "$kind" in
-    human.requested)  echo flagged;    return ;;
-    attention.needed) echo waiting;    return ;;
-    task.dispatched)  echo dispatched; return ;;
-    task.ready)       echo ready;      return ;;
+    flagged|waiting|dispatched|ready) echo "$kind"; return ;;
   esac
   if   (( age > COLD_MIN ));    then echo cold
   elif (( age <= WORKING_MIN ));then echo working
@@ -103,11 +94,11 @@ resolve_state() {
 
 icon() {
   case "$1" in
-    flagged)    printf '✋' ;;   # human.requested — an agent is asking for you
-    waiting)    printf '⏸' ;;   # attention.needed — blocked on a prompt
+    flagged)    printf '✋' ;;   # an unread decide notice — a session is asking for you
+    waiting)    printf '⏸' ;;   # a blocking item — blocked on a prompt
     working)    printf '●' ;;
-    dispatched) printf '◐' ;;   # legacy dispatch (rarely set in the peer-graph era)
-    ready)      printf '✓' ;;   # legacy dispatch result
+    dispatched) printf '◐' ;;   # a hub dispatch still working
+    ready)      printf '✓' ;;   # a hub dispatch that finished
     idle)       printf '○' ;;
     cold)       printf '◌' ;;
   esac
@@ -251,4 +242,5 @@ main() {
   esac
 }
 
-main "$@"
+# Run only when executed, not when sourced, so the tests can load the functions.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
