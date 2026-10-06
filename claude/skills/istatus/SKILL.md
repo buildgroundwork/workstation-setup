@@ -19,7 +19,7 @@ All take free text on stdin, never as a CLI argument (same reason as `isend`/`if
 
 - **`istatus summary <<'EOF' ... EOF`** — overwrite the one-line "what I'm currently doing/thinking" string. No history, no accumulation — call it when what you're working on materially changes, not on every tool call. This is what lets someone glance at the sidebar and know what's happening in a session they haven't looked at in an hour, without reading anything else.
 
-`istatus show` prints the current state as JSON (`{summary, decisions}`) — mainly for the sidebar renderer, but useful to check what you've already said before deciding whether an update is warranted.
+`istatus show` prints the current state as JSON (`{summary, items}`) — mainly for the sidebar renderer, but useful to check what you've already said before deciding whether an update is warranted.
 
 ## When to call `decide`
 
@@ -46,3 +46,23 @@ Whenever what you're actively doing changes in a way that would surprise someone
 ## Getting a sidebar
 
 `istatus` writes its state regardless of whether a sidebar is actually displayed anywhere — the record is useful on its own (Adam can always `istatus show` by hand), and the sidebar is an optional viewer on top of it. To attach a live sidebar to a pane: `~/.workstation/claude/skills/istatus/scripts/istatus-attach.sh` (run from inside the pane to attach to, or pass a pane id as an argument to attach from elsewhere). This is Adam's call to make, not something a session should do to its own pane unprompted.
+
+## What else writes this file: the hooks
+
+The commands above are what a session runs on purpose. Other items in the same file come from Claude Code hooks, wired in global `~/.claude/settings.json`, which call `scripts/istatus-hook.sh`:
+
+- **A permission prompt or an AskUserQuestion menu** (`Notification` with the `permission_prompt` matcher, and `PreToolUse` for `AskUserQuestion`) adds a **blocking** item with the prompt's or the question's text. A blocking item is never marked read; it clears when the prompt is answered (a tool finishing, `PermissionDenied`, a prompt being submitted, or the session ending). A subagent's tools finishing do not clear the parent's permission prompt.
+- **`SessionStart`** records which session occupies the pane (`panes/<pane>.session_id`), which is how the other tools find a session from a pane.
+- **A hub dispatch** adds a `hub.dispatched` notice and the `Stop` hook turns it into an unread `hub.ready` one; see the hub skill.
+- Every hook event also touches `heartbeat/<session_id>`, which `hub/scripts/attention-doctor.sh` uses to spot hooks that have stopped firing.
+
+Because settings load at startup, **a session only has these hooks if it started after they were wired**. Sessions already running at that point stay dark (no row in the status line or the popup) until restarted, and the doctor reports them as dead.
+
+## Where it shows
+
+All of these read through `scripts/istatus-inbox.sh list`, which lists the live sessions (a session counts only while its pane exists and its occupancy pointer still names it, so a pane taken over by `/resume` drops the old session) with one `state` each: `blocked`, `flagged` (an unread notice that is not from the hub), `ready`, `dispatched`, or empty.
+
+- **The tmux status line**, `scripts/istatus-status.sh`: one colored block per non-empty state, in that order, counting sessions. Colors and glyphs can be overridden with `ISTATUS_<STATE>_FG`, `_BG` and `_GLYPH`.
+- **The popup**, `prefix` then `A` `A`, `scripts/istatus-popup.sh`: the rows, most urgent first, with the reason for each; picking one jumps to the pane and marks its finished dispatch viewed.
+- **Focusing a pane** (a `pane-focus-in` tmux hook) marks that pane's finished hub dispatch read. Only that; a decide notice or a blocking item still needs an answer.
+- **`prefix` `A` `C`** force-clears the blocking items of the current pane, for a prompt you interrupted with Esc (that fires no hook, so the item would stay). It does not answer the prompt, it only stops istatus tracking it.

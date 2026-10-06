@@ -26,12 +26,14 @@ Two scripts under this skill's `scripts/` dir do all tmux interaction. Prefer th
 - **`scripts/hub-map.sh`** — prints a JSON array of every tmuxinator project with its live state: `project`, `name`, `root`, `running`, `claude_target` (`"<session>:<window>"` or `""`), `claude_panes`. Pure read.
 - **`scripts/hub-dispatch.sh`** — the mutation/navigation surface:
   - `target <project>` → resolves to `"<session>:<window>"` of the claude window, **auto-starting the session via tmuxinator if it isn't running**. Prints the target.
-  - `send <target>` (prompt on stdin) → types the prompt into the target, presses Enter, and **arms the pane** (`kind: task.dispatched`) so its finish can be detected. **Does not confirm — the skill must confirm first (see below).**
+  - `send <target>` (prompt on stdin) → types the prompt into the target, presses Enter, and **arms the pane** (a `hub.dispatched` notice in the session's istatus file) so its finish can be detected. **Does not confirm — the skill must confirm first (see below).**
   - `go <target>` → switches the active tmux client to that window (navigate / hand off).
-  - `capture <target>` → prints the visible pane contents (for read-back).
-  - `ready` → lists dispatched panes by state: which have **finished** (`task.ready` — the Stop hook flipped them) vs. still **in-flight** (`task.dispatched`), with each pane's `session:window` and original prompt. The read-side of dispatch.
-- **`scripts/hub-wait.sh <target> [timeout]`** — blocks until a dispatched pane finishes (flips to `task.ready`), then prints its settled contents. Polls the state file in a cheap shell loop (not Claude's context), so it's the babysitting primitive for multi-step orchestration. Exit 0 = finished (+ capture), 2 = timeout, 3 = pane wasn't an armed dispatch.
-- **`scripts/hub-stop-hook.sh`** — the personal `Stop` hook (wired in global `~/.claude/settings.json`, not invoked directly): when a session stops, flips its pane `task.dispatched` → `task.ready` if armed, else no-ops. This is what makes finish-detection work.
+  - `capture <target>` → prints the visible pane contents (for read-back), and marks the pane's finished dispatch viewed so it stops counting as unread.
+  - `ready` → lists dispatched panes by state: which have **finished** and not been viewed (`task.ready` — the Stop hook turned their dispatched notice into a ready one) vs. still **in-flight** (`task.dispatched`), with each pane's `session:window` and original prompt. The read-side of dispatch.
+- **`scripts/hub-wait.sh <target> [timeout]`** — blocks until a dispatched pane finishes (its notice becomes a ready one), then prints its settled contents. Polls the istatus inbox in a cheap shell loop (not Claude's context), so it's the babysitting primitive for multi-step orchestration. Exit 0 = finished (+ capture), 2 = timeout, 3 = the pane is not an armed dispatch (never armed, or it was superseded or lost while waiting), 4 = blocked on its own permission prompt.
+- **`scripts/attention-doctor.sh`** — reports sessions whose istatus hooks have silently stopped firing. Detection only.
+
+Finish-detection itself is done by the `Stop` hook, `skills/istatus/scripts/istatus-hook.sh stop`, wired in global `~/.claude/settings.json` along with the other istatus hooks; it is not invoked directly. It turns a session's `hub.dispatched` notice into an unread `hub.ready` one when the session stops, and does nothing for a session that was not dispatched to.
 
 ## Behaviors
 
@@ -47,7 +49,7 @@ Dispatch is **always gated**. Never call `hub-dispatch.sh send` without an expli
 2. **Show Adam the exact prompt and the exact target** (`"<session>:<window>"`) and ask for confirmation. Tune the prompt with him if he wants.
 3. Check the target isn't one he's actively typing in. If `hub-map.sh`/`tmux` shows the target pane is the focused pane, warn — sending would collide with his input.
 4. On OK, pipe the prompt into `hub-dispatch.sh send <target>` via stdin (use a heredoc — `printf '%s' "$prompt" | hub-dispatch.sh send "$target"` is fine too).
-5. After sending, tell him it's dispatched. The `send` armed the pane (`task.dispatched`), so when that session finishes, the personal `Stop` hook flips it to `task.ready` — ask the hub "what's ready?" to see finished dispatches. Still **don't auto-poll a pane's text** — read-back of *content* is pull-on-command; only the finished/in-flight *state* is tracked automatically.
+5. After sending, tell him it's dispatched. The `send` armed the pane (`task.dispatched`), so when that session finishes, the `Stop` hook turns it into `task.ready` — ask the hub "what's ready?" to see finished dispatches. If the target was mid-turn, the prompt queued and the current turn's `Stop` can report it ready early; if `send` could not arm the pane (the session has no pointer yet, because it started before the hooks were wired), it will not show up in `ready` at all. Still **don't auto-poll a pane's text** — read-back of *content* is pull-on-command; only the finished/in-flight *state* is tracked automatically.
 
 A natural driver: run `/today` first, let its priorities suggest what to dispatch where, then dispatch each with confirmation.
 
@@ -62,7 +64,7 @@ For a task that's more than one dispatch — where you want to send a prompt, wa
 The loop, per dispatched step:
 
 1. **Dispatch** the step (gated as always — show Adam the prompt + target, get OK, then `send`). `send` arms the pane.
-2. **Wait** with `hub-wait.sh <target> [timeout]`. It blocks, then returns when the step **finishes** (exit 0, prints the settled pane) — or **blocks on its own permission prompt** (exit 4: the dispatched session hit a permission it doesn't have; tell Adam to approve in that pane, then re-wait) — or **times out** (exit 2). Run it so you get control back at any of those (background it or let it block between turns); don't sit in a Claude polling loop. Exit 4 is common for real tasks — a dispatched session that needs to run a not-allowlisted command will stop and ask; surface that to Adam rather than waiting blind.
+2. **Wait** with `hub-wait.sh <target> [timeout]`. It blocks, then returns when the step **finishes** (exit 0, prints the settled pane) — or **blocks on its own permission prompt** (exit 4: the dispatched session hit a permission it doesn't have; tell Adam to approve in that pane, then re-wait) — or **times out** (exit 2) — or finds the pane **is not an armed dispatch** (exit 3: it was never armed, or a newer dispatch replaced it, or the pane died or was resumed into another session while waiting; check before re-dispatching). A dispatch interrupted with Esc never fires `Stop`, so it keeps waiting. Run it so you get control back at any of those (background it or let it block between turns); don't sit in a Claude polling loop. Exit 4 is common for real tasks — a dispatched session that needs to run a not-allowlisted command will stop and ask; surface that to Adam rather than waiting blind.
 3. **Read + decide.** From the captured result, decide: task done → report back to Adam; needs a follow-up → formulate the next prompt and **re-confirm with Adam before sending it** (every `send` stays gated, even mid-orchestration — a follow-up prompt is still injecting a turn into a real session).
 4. Repeat until the task is complete, then summarize the whole arc for Adam.
 
@@ -79,14 +81,14 @@ Resolve the target and run `hub-dispatch.sh go <target>`. This hands Adam into t
 ## Guardrails
 
 - **Confirm before every `send`.** The hub injects a turn into a real session; an unconfirmed send can clobber what Adam is typing or derail a session mid-task. Show prompt + target, wait for OK.
-- **Don't auto-parse or poll a pane's text.** Reading a dispatched pane's *content* is pull-on-command (via `capture`). What *is* tracked automatically is the dispatch's *state*: `send` arms the pane, and a personal `Stop` hook flips it to `task.ready` on finish — surfaced via `ready`, no TUI parsing. So "is it done?" is automatic; "what did it say?" is still on request.
+- **Don't auto-parse or poll a pane's text.** Reading a dispatched pane's *content* is pull-on-command (via `capture`). What *is* tracked automatically is the dispatch's *state*: `send` arms the pane, and the `Stop` hook turns it into `task.ready` on finish — surfaced via `ready`, no TUI parsing. So "is it done?" is automatic; "what did it say?" is still on request.
 - **Resolve names via the scripts.** Display name ≠ config name ≠ repo dir. Never guess the mapping.
 - **One writer per pane.** Only dispatch to a pane Adam isn't actively typing in.
 - **Auto-start is allowed** (per Adam's choice): if a target isn't running, `target` starts it. Tell Adam when a dispatch caused a session to start.
 
 ## Finish detection (built)
 
-When `send` dispatches, it arms the target pane as `task.dispatched` (via `claude-tmux-attention`'s `arm`). A personal `Stop` hook (`scripts/hub-stop-hook.sh`, wired in global `~/.claude/settings.json`) fires when *any* session stops; if the stopping pane was armed, it flips `task.dispatched` → `task.ready`. The `ready` subcommand reads those facts back. The `Stop` hook lives in the personal layer, not the shipped plugin — it no-ops unless a pane was armed, so it costs other marketplace users nothing. See `~/workspace/claude-code/plans/attention-core-split-and-hub.md`.
+When `send` dispatches, it arms the target pane (`istatus-hook.sh arm`), which adds a `hub.dispatched` notice to the status file of the session that occupies the pane. The `Stop` hook (`istatus-hook.sh stop`, wired in global `~/.claude/settings.json`) fires when *any* session stops; if the stopping session has a dispatched notice, it turns it into an unread `hub.ready` one, and otherwise exits early without taking a lock. The `ready` subcommand reads those facts back from the istatus inbox, and focusing the pane, `capture`, or jumping to it from the popup marks the ready notice read. Known limits: a dispatch into a pane that is mid-turn can read ready one turn early, and a turn interrupted with Esc never reads ready.
 
 ## Orchestration (built)
 
