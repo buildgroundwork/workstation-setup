@@ -8,8 +8,10 @@
 #   istatus-inbox.sh list
 #     Prints a JSON array, one row per live session:
 #       { session_id, pane, tmux_session, tmux_window, summary, items, state }
-#     items is always a list of objects, whatever the file held. state is
-#     "blocked" when any item is a blocking one, else "".
+#     items is always a list of objects, whatever the file held. state is the
+#     highest of: "blocked" (a blocking item), "flagged" (an unread notice
+#     that is not from the hub, i.e. a decide), "ready" (an unread
+#     hub.ready), "dispatched" (a hub.dispatched), else "".
 #     A session is live while its file's pane is a live tmux pane AND the
 #     pane's occupancy pointer (panes/<pane>.session_id) still names it, so
 #     a pane taken over by another session, as after /resume, drops the old
@@ -62,6 +64,17 @@ live_sessions() {
     def items_of:
       if (.items | type) == "array" then [.items[] | select(type == "object")]
       else [] end;
+    # The one label a consumer shows for a list of items, highest first:
+    # blocked (a blocking item), flagged (an unread decide notice, meaning one
+    # that is not from the hub), ready (an unread finished dispatch), dispatched
+    # (a dispatch still running), else empty.
+    def from_hub: (.source | type) == "string" and (.source | startswith("hub."));
+    def state_of:
+      if any(.[]; .kind == "blocking") then "blocked"
+      elif any(.[]; .kind == "notice" and .state == "unread" and (from_hub | not)) then "flagged"
+      elif any(.[]; .source == "hub.ready" and .state == "unread") then "ready"
+      elif any(.[]; .source == "hub.dispatched") then "dispatched"
+      else "" end;
     ($panes | split("\n")
             | map(select(length > 0) | split("\t") | { key: .[0], value: { session: .[1], window: .[2] } })
             | from_entries) as $live
@@ -77,7 +90,7 @@ live_sessions() {
             tmux_window: $live[.pane].window,
             summary,
             items: items_of,
-            state: (if any(items_of[]; .kind == "blocking") then "blocked" else "" end) } ]
+            state: (items_of | state_of) } ]
   ' "$@"
 }
 

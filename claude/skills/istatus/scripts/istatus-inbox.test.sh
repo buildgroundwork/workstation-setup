@@ -90,6 +90,69 @@ assert_eq "$(list_of '[.[].state]')" '["blocked"]' \
   "list marks a session with a blocking item as blocked"
 teardown
 
+# ── a session with an unread decide notice is flagged ────────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"pick a name","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '["flagged"]' \
+  "list marks a session with an unread decide notice as flagged"
+teardown
+
+# ── a blocking item outranks an unread decide notice ─────────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"pick a name","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"},{"id":"b1","kind":"blocking","text":"needs approval","source":"","state":"unread","created_at":"2026-10-06T00:00:01Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '["blocked"]' \
+  "list marks a session with both a blocking item and a decide notice as blocked"
+teardown
+
+# ── a session whose dispatched task finished is ready ────────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"r1","kind":"notice","text":"run the migration","source":"hub.ready","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '["ready"]' \
+  "list marks a session with an unread ready notice as ready"
+teardown
+
+# ── an unread decide notice outranks a finished dispatch ─────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"r1","kind":"notice","text":"run the migration","source":"hub.ready","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"},{"id":"n1","kind":"notice","text":"pick a name","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:01Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '["flagged"]' \
+  "list marks a session with a decide notice and a finished dispatch as flagged"
+teardown
+
+# ── a finished dispatch the human deferred no longer counts ──────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"r1","kind":"notice","text":"run the migration","source":"hub.ready","state":"read","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '[""]' \
+  "list leaves the state empty when the only item is a deferred ready notice"
+teardown
+
+# ── a session still working on a dispatched task is dispatched ───────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"d1","kind":"notice","text":"run the migration","source":"hub.dispatched","state":"read","priority":"low","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '["dispatched"]' \
+  "list marks a session with a dispatched notice as dispatched"
+teardown
+
+# ── nothing actionable leaves the state empty ───────────────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"pick a name","state":"read","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '[""]' \
+  "list leaves the state empty when the only item is a read decide notice"
+teardown
+
 # ── a status file whose items is not a list does not hide the others ─────────
 setup
 seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
@@ -110,6 +173,17 @@ occupy %43 sess-odd
 export ISTATUS_TMUX_PANES=$'%42\tproj\t3\n%43\tproj\t4'
 assert_eq "$(list_of '[.[].session_id | select(. == "sess-1")]')" '["sess-1"]' \
   "list keeps the other sessions when one file's items are not objects"
+teardown
+
+# ── a status file whose item source is not a string does not hide the others ─
+setup
+seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
+occupy %42 sess-1
+seed sess-odd '{"summary":"s","pane":"%43","items":[{"kind":"notice","state":"unread","source":5}]}'
+occupy %43 sess-odd
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3\n%43\tproj\t4'
+assert_eq "$(list_of '[.[].session_id | select(. == "sess-1")]')" '["sess-1"]' \
+  "list keeps the other sessions when one file's item source is not a string"
 teardown
 
 # ── a tmux session name containing spaces is kept whole ──────────────────────
