@@ -14,6 +14,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 RESOLVE_PANE="$SCRIPT_DIR/istatus-resolve-pane.sh"
+# The state directory keeps the name of the old claude-tmux-attention plugin.
 STATUS_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/status"
 
 PAIRED_PANE="${1:?usage: istatus-sidebar.sh <paired-tmux-pane-id>}"

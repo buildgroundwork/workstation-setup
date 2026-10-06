@@ -9,7 +9,10 @@
 # on every render rather than caching it once.
 #
 # Method: istatus.sh writes ~/.claude-tmux-attention/panes/<pane>.session_id
-# on every call (decide/resolve/summary/show), unconditionally. Just read it.
+# on every call (decide/resolve/summary/show), unconditionally, and so do the
+# hooks (istatus-hook.sh start at every SessionStart, and add). Just
+# read it. (The directory keeps the name of the old claude-tmux-attention
+# plugin; the plugin itself is no longer involved.)
 #
 # This used to scan claude-tmux-attention's debug.log instead, but that log
 # only exists when CLAUDE_TMUX_ATTENTION_DEBUG=1 is set in the session's own
@@ -21,7 +24,8 @@
 # every call already has.
 #
 # Consequence of the new method: a pane whose session has never called
-# istatus (decide/resolve/summary/show) has no pointer yet. That's an honest
+# istatus (decide/resolve/summary/show) and has had no hook fire for it (no
+# SessionStart since the hooks were wired) has no pointer yet. That's an honest
 # "no istatus activity yet," not a resolution failure — it self-corrects the
 # moment the session calls istatus.
 #

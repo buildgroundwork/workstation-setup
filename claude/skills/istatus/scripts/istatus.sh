@@ -16,10 +16,10 @@
 #   Every item has a `kind`:
 #     - "blocking": the session is stopped and cannot proceed without a
 #       response (a permission prompt, an AskUserQuestion menu). These are
-#       produced by Claude Code HOOK EVENTS, not by istatus commands — a
-#       future step wires attention-state.sh's hook producers to write here
-#       instead of its own separate pending.json. A blocking item can NEVER
-#       be marked "read" (state is always "unread" until it's removed by its
+#       produced by Claude Code HOOK EVENTS, not by istatus commands:
+#       istatus-hook.sh, wired in settings.json, writes them here. A
+#       blocking item can NEVER be marked "read" (state is always "unread"
+#       until it's removed by its
 #       own resolution hook firing) — viewing it doesn't discharge it, only
 #       responding to the actual prompt does. istatus resolve CAN force-
 #       remove one as a manual escape hatch (mirroring the old clear-pane
@@ -27,8 +27,8 @@
 #       override, not part of the normal lifecycle, and it warns loudly that
 #       the underlying prompt was NOT actually answered.
 #     - "notice": the agent's own judgment call that something is worth the
-#       human's attention (istatus decide), or a passive FYI (a dispatched
-#       task finishing). Has a `priority` (high/normal/low) set by whoever
+#       human's attention (istatus decide), or a hub dispatch's notices
+#       (see `source` below). Has a `priority` (high/normal/low) set by whoever
 #       created it. Unlike blocking items, a notice can be marked "read"
 #       (seen, deliberately deferred — stays in the list, drops out of the
 #       unread/attention count) without being removed, and later resolved
@@ -41,20 +41,31 @@
 #   (high -> normal -> low), then recency within a priority tier.
 #
 #   Aggregate "does this pane need the human" (for the status-line count,
-#   the popup) is DERIVED, never stored here: any unread item of either
-#   kind, OR any blocking item regardless of state (it can't be "read" away).
-#   That derivation currently still happens by bridging to
-#   claude-tmux-attention's human.requested/mark-viewed (see cmd_decide /
-#   _maybe_clear_attention below) — a transitional step until the hook
-#   producers themselves are migrated to write blocking items directly into
-#   this file, at which point pending.json's human.requested goes away
-#   entirely and the bridge calls here are deleted.
+#   the popup) is DERIVED, never stored here, by istatus-inbox.sh: one `state`
+#   per live session, "blocked" (any blocking item) > "flagged" (an unread
+#   notice that is not from the hub) > "ready" (an unread hub.ready) >
+#   "dispatched" (a hub.dispatched) > "".
+#   TRANSITIONAL: cmd_decide and _maybe_clear_attention below still call
+#   claude-tmux-attention's request-human/mark-viewed. Nothing reads that now
+#   that the plugin is disabled, and those calls are to be deleted. Delete them
+#   BEFORE the plugin is uninstalled: _resolve_state_sh dies when the plugin's
+#   cache path is gone, which would make `istatus decide` fail.
 #
 # State file: ~/.claude-tmux-attention/status/<session_id>.json
 #   { summary: "<current work/thinking, or empty>",
-#     items: [ { id, kind, text, state, priority?, created_at }, ... ] }
+#     pane: "<tmux pane id>",   (written by the hooks)
+#     items: [ { id, kind, text, state, priority?, source?, created_at }, ... ] }
 #   kind: "blocking" | "notice". state: "unread" | "read" (blocking is
 #   always "unread"). priority (notice only): "high" | "normal" | "low".
+#   source: what raised the item. For a blocking item, the tool_name of the
+#   hook payload ("" for a permission prompt, "AskUserQuestion" for a menu),
+#   which is how a resolution knows what it resolves. For a hub dispatch,
+#   "hub.dispatched" (read, low) or "hub.ready" (unread when finished). A
+#   decide notice has none. Readers must tolerate its absence.
+#   pane: the tmux pane the session lives in; a reader trusts the file only
+#   while panes/<pane>.session_id still names this session.
+#   Other files in the same directory: panes/<pane>.session_id (which session
+#   occupies a pane), heartbeat/<session_id> (touched by every hook event).
 #
 # session_id is $CLAUDE_CODE_SESSION_ID — the Claude session UUID, NOT the
 # inter-session bus name. A bus name survives a `/resume` into a different
