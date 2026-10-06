@@ -290,6 +290,14 @@ assert_eq "$([[ -e "$DIR/status-sess-1.lock" ]] && echo present || echo absent)"
   "remove takes no lock when the session has no blocking item"
 teardown
 
+# ── every hook event leaves a heartbeat for its session ──────────────────────
+# Even the earliest-returning one, remove on a session with no status file.
+setup
+complete_tool sess-1 Bash
+assert_eq "$([[ -e "$DIR/heartbeat/sess-1" ]] && echo present || echo absent)" "present" \
+  "a hook event leaves a heartbeat for its session"
+teardown
+
 # ── a hook failure never reaches the session ─────────────────────────────────
 setup
 assert_eq "$(printf 'not json' | "$SCRIPT" add 2>/dev/null; echo "rc=$?")" "rc=0" \

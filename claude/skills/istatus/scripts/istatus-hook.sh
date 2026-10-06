@@ -2,6 +2,10 @@
 # istatus-hook — Claude Code hook entry point that records "blocking" items in
 # a session's istatus file (see istatus.sh for the item model and file shape).
 #
+# Every hook event that carries a payload (add, remove, start, stop) also
+# touches heartbeat/<session_id>, so the time of a session's last hook event is
+# on record for attention-doctor.sh.
+#
 # Usage (wired as a hook command; payload is the hook JSON on stdin):
 #   istatus-hook.sh add
 #     Adds a "blocking" item, unread, to status/<session_id>.json. Its text is
@@ -218,6 +222,21 @@ read_payload() {
   PAYLOAD=$(cat)
   SESSION_ID=$(jq -r '.session_id // empty' <<<"$PAYLOAD")
   [[ -n "$SESSION_ID" ]] || die "no session_id in payload"
+  beat
+}
+
+# Record that a hook fired for this session: truncate heartbeat/<session_id>, so
+# its mtime is the time of the last hook event. attention-doctor compares it
+# with the session's transcript to spot hooks that have silently stopped firing.
+# Only hooks write it (istatus.sh never does), which is what makes it a signal
+# about hooks and not about istatus use. `: >` is a builtin, so the common case
+# forks nothing; the directory is made only when the first write fails. A
+# failure here must never stop the hook's real work.
+beat() {
+  local file="$ATTENTION_DIR/heartbeat/$SESSION_ID"
+  { : > "$file"; } 2>/dev/null && return 0
+  mkdir -p "$ATTENTION_DIR/heartbeat" 2>/dev/null || return 0
+  { : > "$file"; } 2>/dev/null || true
 }
 
 # The read-modify-write for add. Runs under the session lock.
