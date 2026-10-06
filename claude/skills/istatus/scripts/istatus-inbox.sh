@@ -62,7 +62,7 @@ live_sessions() {
                   | from_entries) as $occupant
     | [ inputs
         | (input_filename | split("/") | last | rtrimstr(".json")) as $sid
-        | select(.pane != null and $live[.pane] != null and $occupant[.pane] == $sid)
+        | select(type == "object" and (.pane | type) == "string" and $live[.pane] != null and $occupant[.pane] == $sid)
         | { session_id: $sid,
             pane,
             tmux_session: $live[.pane].session,

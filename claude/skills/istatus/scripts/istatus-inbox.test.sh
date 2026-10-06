@@ -100,5 +100,34 @@ assert_eq "$(list_of '[.[].session_id]')" '["sess-1"]' \
   "list skips a malformed status file and still shows the others"
 teardown
 
+# ── a status file that is valid JSON but not an object is skipped ────────────
+setup
+seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
+occupy %42 sess-1
+seed sess-arr '[]'
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].session_id]')" '["sess-1"]' \
+  "list skips a status file that is not a JSON object"
+teardown
+
+# ── a status file whose pane is not a string is skipped ──────────────────────
+setup
+seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
+occupy %42 sess-1
+seed sess-num '{"summary":"s","pane":42,"items":[]}'
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].session_id]')" '["sess-1"]' \
+  "list skips a status file whose pane is not a string"
+teardown
+
+# ── every status file is malformed ───────────────────────────────────────────
+setup
+seed sess-bad '{not json'
+seed sess-worse 'also not json'
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '.')" '[]' \
+  "list is an empty array when every status file is malformed"
+teardown
+
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
