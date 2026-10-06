@@ -15,8 +15,8 @@
 #     blocking item. A tool_name clears the items that tool raised, plus
 #     permission prompts unless the payload carries an agent_id: a subagent's
 #     auto-approved tools finish while the parent's prompt is still pending.
-#     A session with no status file is a silent no-op, since this fires on
-#     every tool call and most sessions never block.
+#     A session with no status file, or none with a blocking item, is a silent
+#     no-op that takes no lock, since this fires on every tool call.
 #
 #   istatus-hook.sh start
 #     Records which session occupies this pane (panes/<pane>.session_id) and
@@ -71,13 +71,18 @@ cmd_add() {
 cmd_remove() {
   local tool agent status_file
   read_payload
-  tool=$(jq -r '.tool_name // empty' <<<"$PAYLOAD")
-  agent=$(jq -r '.agent_id // empty' <<<"$PAYLOAD")
 
-  # Checked before taking the lock so a session that never blocks, which is
-  # most of them, doesn't get a lock file created on every tool call.
+  # Both checks run before taking the lock, so a session with no status file,
+  # or none with a blocking item, takes no lock and writes nothing on a tool
+  # call. Any session that has ever run istatus has a status file, so the file
+  # check alone would not spare most of them. Writers replace the file
+  # atomically, so an unlocked read sees a whole file.
   status_file="$STATUS_DIR/${SESSION_ID}.json"
   [[ -f "$status_file" ]] || return 0
+  has_blocking_item "$status_file" || return 0
+
+  tool=$(jq -r '.tool_name // empty' <<<"$PAYLOAD")
+  agent=$(jq -r '.agent_id // empty' <<<"$PAYLOAD")
   LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"
   with_lock clear_resolved_items "$status_file" "$tool" "$agent"
 }
@@ -156,6 +161,10 @@ record_dispatch() {
     | .items += [ { id: $id, kind: "notice", text: $text, source: "hub.dispatched",
                     state: "read", priority: "low", created_at: $ts } ]
   '
+}
+
+has_blocking_item() {
+  jq -e '[.items[] | select(.kind == "blocking")] | length > 0' "$1" >/dev/null 2>&1
 }
 
 has_dispatched_item() {

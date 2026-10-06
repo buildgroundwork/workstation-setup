@@ -198,6 +198,14 @@ assert_eq "$(complete_tool sess-9 Bash 2>&1; echo "rc=$?")" "rc=0" \
   "remove for a session with no status file is a silent no-op"
 teardown
 
+# ── a resolution with nothing to clear does not take the session lock ───────
+setup
+seed sess-1 "$SEED_WITH_NOTICE"
+complete_tool sess-1 Bash
+assert_eq "$([[ -e "$DIR/status-sess-1.lock" ]] && echo present || echo absent)" "absent" \
+  "remove takes no lock when the session has no blocking item"
+teardown
+
 # ── a hook failure never reaches the session ─────────────────────────────────
 setup
 assert_eq "$(printf 'not json' | "$SCRIPT" add 2>/dev/null; echo "rc=$?")" "rc=0" \
