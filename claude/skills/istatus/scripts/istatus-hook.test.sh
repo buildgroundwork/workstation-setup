@@ -105,6 +105,12 @@ viewed() {
   TMUX=fake TMUX_PANE=%1 "$SCRIPT" viewed "$1" </dev/null
 }
 
+# clear_pane <target_pane> — run from another pane (TMUX_PANE is not the
+# target's) to force-clear the target pane's blocking items by hand.
+clear_pane() {
+  TMUX=fake TMUX_PANE=%1 "$SCRIPT" clear-pane "$1" </dev/null
+}
+
 # seed <session_id> <json> — write a pre-existing status file for a session.
 seed() {
   mkdir -p "$DIR/status"
@@ -391,6 +397,15 @@ viewed %50
 assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
   '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"read"}]' \
   "viewed marks a ready notice read and leaves a decide notice unread"
+teardown
+
+# ── clearing a pane by hand removes its blocking items and nothing else ──────
+setup
+start %42 sess-1
+seed sess-1 "$(jq -c '.items += [{"id":"b1","kind":"blocking","text":"needs approval","source":"","state":"unread","created_at":"2026-10-06T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
+clear_pane %42
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '["notice"]' \
+  "clear-pane removes a pane's blocking items and keeps its notices"
 teardown
 
 # ── a top-level tool finishing clears a pending permission prompt ────────────

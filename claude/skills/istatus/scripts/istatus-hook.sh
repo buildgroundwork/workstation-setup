@@ -43,6 +43,14 @@
 #     session through the pane's pointer, is a silent no-op without one, and
 #     never reads TMUX_PANE. It takes no lock unless there is something to mark.
 #
+#   istatus-hook.sh clear-pane <target-pane>   (run by hand)
+#     Force-removes the blocking items of the session that occupies
+#     <target-pane>; notices and the summary are untouched. The escape hatch
+#     for a prompt interrupted with Esc, where no resolution hook fires. It
+#     does not answer the prompt, it only stops istatus tracking it. Like
+#     viewed it uses the pane's pointer, is a silent no-op without one, and
+#     never reads TMUX_PANE.
+#
 #   istatus-hook.sh stop
 #     Wired on Stop, in the dispatched session itself. Turns its
 #     "hub.dispatched" notice into an unread, normal-priority "hub.ready" one
@@ -178,6 +186,20 @@ cmd_viewed() {
   with_lock mark_ready_read "$status_file"
 }
 
+# The manual escape hatch for a prompt that was interrupted with Esc, where no
+# resolution hook fires and the blocking item would otherwise stay. Addressed by
+# pane like viewed, so it never reads TMUX_PANE. Removes only blocking items.
+cmd_clear_pane() {
+  local target="$1" sid status_file
+  sid=$(session_in_pane "$target") || return 0
+
+  status_file="$STATUS_DIR/${sid}.json"
+  [[ -f "$status_file" ]] || return 0
+  has_blocking_item "$status_file" || return 0
+  LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
+  with_lock drop_blocking_items "$status_file"
+}
+
 # The session id that the pane's occupancy pointer names. Fails when the pane
 # is empty or has no pointer, so callers treat "nobody known there" as a no-op.
 session_in_pane() {
@@ -264,6 +286,11 @@ mark_ready_read() {
   '
 }
 
+# The read-modify-write for clear-pane. Runs under the session lock.
+drop_blocking_items() {
+  rewrite_status "$1" '.items |= map(select(.kind != "blocking"))'
+}
+
 # The read-modify-write for remove. Runs under the session lock.
 clear_resolved_items() {
   local status_file="$1" tool="$2" agent="$3"
@@ -348,11 +375,12 @@ record_pane_occupant() {
 }
 
 case "${1:-}" in
-  add)    cmd_add ;;
-  remove) cmd_remove ;;
-  start)  cmd_start ;;
-  arm)    cmd_arm "${2:-}" ;;
-  stop)   cmd_stop ;;
-  viewed) cmd_viewed "${2:-}" ;;
-  *)      die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop|viewed <pane>" ;;
+  add)        cmd_add ;;
+  remove)     cmd_remove ;;
+  start)      cmd_start ;;
+  arm)        cmd_arm "${2:-}" ;;
+  stop)       cmd_stop ;;
+  viewed)     cmd_viewed "${2:-}" ;;
+  clear-pane) cmd_clear_pane "${2:-}" ;;
+  *)          die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop|viewed <pane>|clear-pane <pane>" ;;
 esac
