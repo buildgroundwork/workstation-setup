@@ -60,6 +60,24 @@ LOCK_TIMEOUT="${ISTATUS_LOCK_TIMEOUT:-2}"
 
 die() { printf 'istatus-hook: %s\n' "$*" >&2; exit 1; }
 
+# A jq def for writers that add to a status file. A file written by the
+# pre-items istatus.sh has `decisions` and no `items`; `.items += [...]` on it
+# would create `items` next to the stale `decisions`, and istatus.sh's next
+# migration would then keep only our items and drop every legacy decision.
+# Convert the same way that migration does (each decision becomes an unread,
+# normal-priority notice; an existing `items` takes precedence), then drop
+# `decisions`. Unlike that migration, other keys such as `pane` are kept.
+NORMALIZE_JQ='
+  def normalize:
+    if has("decisions") or (has("items") | not) then
+      (if has("items") then .items
+       else [ (.decisions // [])[]
+              | { id, kind: "notice", text, state: "unread", priority: "normal", created_at } ]
+       end) as $items
+      | del(.decisions) | .items = $items
+    else . end;
+'
+
 cmd_add() {
   local text source
   read_payload
@@ -142,8 +160,9 @@ record_blocking_item() {
   [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
   rewrite_status "$status_file" \
     --arg id "$id" --arg text "$text" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg pane "${TMUX_PANE:-}" --arg source "$source" '
-    .pane = $pane
+    --arg pane "${TMUX_PANE:-}" --arg source "$source" "$NORMALIZE_JQ"'
+    normalize
+    | .pane = $pane
     | .items += [ { id: $id, kind: "blocking", text: $text, source: $source, state: "unread", created_at: $ts } ]
   '
 
@@ -158,8 +177,9 @@ record_dispatch() {
   [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
   rewrite_status "$status_file" \
     --arg id "$id" --arg text "$prompt" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg pane "$pane" '
-    .pane = $pane
+    --arg pane "$pane" "$NORMALIZE_JQ"'
+    normalize
+    | .pane = $pane
     | .items |= map(select((.source // "") | startswith("hub.") | not))
     | .items += [ { id: $id, kind: "notice", text: $text, source: "hub.dispatched",
                     state: "read", priority: "low", created_at: $ts } ]

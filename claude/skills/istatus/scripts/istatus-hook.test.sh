@@ -141,6 +141,25 @@ assert_eq "$(items_of sess-1 '{summary, kinds: [.items[].kind]}')" \
   "add into an existing status file keeps the summary and appends"
 teardown
 
+# ── add converts a pre-items file's decisions into notices ───────────────────
+setup
+seed sess-1 '{"summary":"s","decisions":[{"id":"d1","text":"old q","created_at":"2026-01-01T00:00:00Z"}]}'
+add %42 sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(items_of sess-1 '{has_decisions: has("decisions"), kinds: [.items[].kind]}')" \
+  '{"has_decisions":false,"kinds":["notice","blocking"]}' \
+  "add migrates a pre-items file's decisions into notices"
+teardown
+
+# ── arm converts a pre-items file's decisions into notices ───────────────────
+setup
+start %50 sess-2
+seed sess-2 '{"summary":"s","decisions":[{"id":"d1","text":"old q","created_at":"2026-01-01T00:00:00Z"}]}'
+arm %50 "run the migration"
+assert_eq "$(items_of sess-2 '{has_decisions: has("decisions"), kinds: [.items[].kind]}')" \
+  '{"has_decisions":false,"kinds":["notice","notice"]}' \
+  "arm migrates a pre-items file's decisions into notices"
+teardown
+
 # ── add records the pane the session lives in ────────────────────────────────
 setup
 add %42 sess-1 "Claude needs your permission to use Bash"
