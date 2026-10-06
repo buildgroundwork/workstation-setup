@@ -20,17 +20,21 @@
 #
 #   istatus-hook.sh start
 #     Records which session occupies this pane (panes/<pane>.session_id) and
-#     nothing else; it creates no status file. Wired on SessionStart.
+#     nothing else; it creates no status file. Wired on SessionStart, which
+#     fires on startup, resume, clear, compact and fork, so a pane taken over
+#     by /resume points at the new session straight away.
 #
 #   istatus-hook.sh arm <target-pane>   (prompt on stdin; run by the hub)
 #     Adds a read, low-priority "hub.dispatched" notice, whose text is the
 #     prompt, to the session that occupies <target-pane>, and records
 #     <target-pane> as the file's pane. Any earlier item whose source starts
-#     with "hub." is removed first, so a re-dispatch supersedes the last one;
-#     other notices and blocking items are untouched. The session is found through the
-#     pane's occupancy pointer, so it is a silent no-op when there is none: a
-#     session that was already running before start was wired may not have one
-#     yet. Never reads TMUX_PANE, which here is the hub's pane.
+#     with "hub." is removed first, so a re-dispatch supersedes the last
+#     one; other notices and blocking items are untouched. The session is
+#     found through the pane's occupancy pointer, so it is a silent no-op
+#     when there is none: a session that was already running before start
+#     was wired may not have one yet, and a pane resumed before start was
+#     wired can still name its previous occupant. Never reads TMUX_PANE,
+#     which here is the hub's pane.
 #
 #   istatus-hook.sh stop
 #     Wired on Stop, in the dispatched session itself. Turns its
@@ -39,6 +43,9 @@
 #     Stop does not fire when a turn is interrupted with Esc, so an
 #     interrupted dispatch stays a read "hub.dispatched" notice until the next
 #     arm replaces it. A ready notice the human deferred (read) is left alone.
+#     Known race: a prompt dispatched into a pane that is mid-turn queues, and
+#     the CURRENT turn's Stop reports it ready before it has run. A send that
+#     fails is not armed, so it raises no false ready.
 
 set -euo pipefail
 
