@@ -77,6 +77,20 @@ stop() {
     | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" stop
 }
 
+# hold_lock <session_id> — take the session's lock in a background process and
+# keep it until release_lock. Waits for the holder to acquire it, so a writer
+# started afterwards finds it taken.
+hold_lock() {
+  mkfifo "$DIR/release"
+  ( flock -x 9; read -r _ < "$DIR/release" ) 9>"$DIR/status-$1.lock" &
+  HOLDER=$!
+  sleep 0.2
+}
+release_lock() {
+  echo > "$DIR/release"
+  wait "$HOLDER"
+}
+
 # seed <session_id> <json> — write a pre-existing status file for a session.
 seed() {
   mkdir -p "$DIR/status"
@@ -214,17 +228,42 @@ teardown
 
 # ── a write waits for the session lock istatus.sh also takes ─────────────────
 setup
-mkfifo "$DIR/release"
-( flock -x 9; read -r _ < "$DIR/release" ) 9>"$DIR/status-sess-1.lock" &
-holder=$!
-sleep 0.2
+hold_lock sess-1
 add %42 sess-1 "Claude needs your permission to use Bash" &
 adder=$!
 sleep 0.3
 assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
   "add waits while another writer holds the session lock"
-echo > "$DIR/release"
-wait "$holder" "$adder"
+release_lock
+wait "$adder"
+teardown
+
+# ── a write gives up on a lock that stays held ───────────────────────────────
+setup
+export ISTATUS_LOCK_TIMEOUT=0.5
+hold_lock sess-1
+add %42 sess-1 "Claude needs your permission to use Bash" &
+adder=$!
+sleep 1.5
+assert_eq "$(kill -0 "$adder" 2>/dev/null && echo running || echo exited)" "exited" \
+  "add gives up once the lock wait times out"
+release_lock
+wait "$adder"
+unset ISTATUS_LOCK_TIMEOUT
+teardown
+
+# ── a write that gives up on the lock drops its item ─────────────────────────
+setup
+export ISTATUS_LOCK_TIMEOUT=0.5
+hold_lock sess-1
+add %42 sess-1 "Claude needs your permission to use Bash" &
+adder=$!
+sleep 1.5
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
+  "add records nothing when the lock wait times out"
+release_lock
+wait "$adder"
+unset ISTATUS_LOCK_TIMEOUT
 teardown
 
 # ── a new session announces which pane it occupies ──────────────────────────

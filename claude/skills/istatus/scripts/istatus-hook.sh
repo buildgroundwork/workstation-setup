@@ -54,6 +54,9 @@ trap 'exit 0' EXIT
 ATTENTION_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
 STATUS_DIR="$ATTENTION_DIR/status"
 PANES_DIR="$ATTENTION_DIR/panes"
+# Seconds to wait for the session lock before dropping the write.
+# ISTATUS_LOCK_TIMEOUT overrides it, for tests.
+LOCK_TIMEOUT="${ISTATUS_LOCK_TIMEOUT:-2}"
 
 die() { printf 'istatus-hook: %s\n' "$*" >&2; exit 1; }
 
@@ -202,11 +205,15 @@ clear_resolved_items() {
 # Same lock istatus.sh takes (status-<sid>.lock in the attention dir; flock when
 # available, a mkdir-based spinlock otherwise), so a hook write can't race an
 # istatus call, or another hook, in the same session and lose an item. Copied
-# from istatus.sh; the mkdir fallback is untested here.
+# from istatus.sh except that the flock wait is bounded: a wedged holder must
+# not make every later hook in the session hang until Claude Code kills it,
+# which would surface as a hook error on every tool call. On timeout the write
+# is dropped, costing at most a missed item. The mkdir fallback is untested
+# here; the Brewfile installs flock so that the tested path is the usual one.
 with_lock() {
   if command -v flock >/dev/null 2>&1; then
     exec 9>"$LOCK_FILE"
-    flock -x 9
+    flock -x -w "$LOCK_TIMEOUT" 9 || return 0
     "$@"
   else
     local lock="$LOCK_FILE.d"
