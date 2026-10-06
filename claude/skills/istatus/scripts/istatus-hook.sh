@@ -167,7 +167,8 @@ record_blocking_item() {
     --arg id "$id" --arg text "$text" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg pane "${TMUX_PANE:-}" --arg source "$source" "$NORMALIZE_JQ"'
     normalize
-    | .pane = $pane
+    # Record the pane only when known, so an add without one cannot erase it.
+    | (if $pane != "" then .pane = $pane else . end)
     | .items += [ { id: $id, kind: "blocking", text: $text, source: $source, state: "unread", created_at: $ts } ]
   '
 

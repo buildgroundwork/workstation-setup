@@ -175,6 +175,14 @@ assert_eq "$(items_of sess-1 '.pane')" '"%42"' \
   "add records the pane in the status file"
 teardown
 
+# ── an add with no pane leaves the recorded pane alone ───────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[]}'
+add "" sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(items_of sess-1 '.pane')" '"%42"' \
+  "add without a pane keeps the pane already recorded"
+teardown
+
 # ── add records which session occupies the pane ──────────────────────────────
 setup
 add %42 sess-1 "Claude needs your permission to use Bash"
