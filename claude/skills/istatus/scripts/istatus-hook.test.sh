@@ -240,6 +240,22 @@ assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
   "the raising tool completing clears its menu"
 teardown
 
+# ── a subagent finishing the raising tool still clears its menu ──────────────
+setup
+ask_question %42 sess-1 "Which database?"
+complete_tool sess-1 AskUserQuestion agent-7
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
+  "a subagent completing the raising tool clears its menu"
+teardown
+
+# ── a non-tool resolution clears a pending menu ──────────────────────────────
+setup
+ask_question %42 sess-1 "Which database?"
+resolve sess-1
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
+  "a non-tool resolution clears a pending menu"
+teardown
+
 # ── a subagent's tool finishing leaves the parent's permission prompt ────────
 setup
 add %42 sess-1 "Claude needs your permission to use Bash"
@@ -274,8 +290,8 @@ hold_lock sess-1
 add %42 sess-1 "Claude needs your permission to use Bash" &
 adder=$!
 sleep 0.3
-assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
-  "add waits while another writer holds the session lock"
+assert_eq "$(kill -0 "$adder" 2>/dev/null && echo running || echo exited)" "running" \
+  "add is still waiting while another writer holds the session lock"
 release_lock
 wait "$adder"
 teardown
@@ -324,6 +340,14 @@ assert_eq "$(items_of sess-2 '{pane, items: [.items[] | {kind, state, priority, 
   "arm records a dispatched notice on the target pane's session"
 teardown
 
+# ── the hub dispatching does not claim the hub's own pane ────────────────────
+setup
+start %50 sess-2
+arm %50 "run the migration"
+assert_eq "$(pointer_of %1)" "" \
+  "arm leaves the hub's own pane without an occupancy pointer"
+teardown
+
 # ── a new dispatch supersedes earlier hub items and leaves the rest ──────────
 setup
 start %50 sess-2
@@ -344,13 +368,13 @@ assert_eq "$(items_of sess-2 '[.items[] | {source, state, priority, text}]')" \
   "stop turns a dispatched notice into an unread ready notice"
 teardown
 
-# ── a ready notice the human already deferred is not raised again ────────────
+# ── a file with no dispatched notice is left as it is ────────────────────────
 setup
 seed sess-2 "$(jq -c '.items += [{"id":"r2","kind":"notice","text":"done task","source":"hub.ready","state":"read","priority":"normal","created_at":"2026-10-05T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
 stop %50 sess-2
 assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
   '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"read"}]' \
-  "stop does not re-raise a deferred ready notice"
+  "stop leaves a status file with no dispatched notice alone"
 teardown
 
 # ── a top-level tool finishing clears a pending permission prompt ────────────
