@@ -81,6 +81,37 @@ assert_eq "$(list_of '[.[].session_id]')" '[]' \
   "list omits a session whose pane now belongs to another session"
 teardown
 
+# ── a session with a blocking item is blocked ───────────────────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"b1","kind":"blocking","text":"needs approval","source":"","state":"unread","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].state]')" '["blocked"]' \
+  "list marks a session with a blocking item as blocked"
+teardown
+
+# ── a status file whose items is not a list does not hide the others ─────────
+setup
+seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
+occupy %42 sess-1
+seed sess-odd '{"summary":"s","pane":"%43","items":"oops"}'
+occupy %43 sess-odd
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3\n%43\tproj\t4'
+assert_eq "$(list_of '[.[].session_id | select(. == "sess-1")]')" '["sess-1"]' \
+  "list keeps the other sessions when one file's items is not a list"
+teardown
+
+# ── a status file whose items are not objects does not hide the others ───────
+setup
+seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
+occupy %42 sess-1
+seed sess-odd '{"summary":"s","pane":"%43","items":[1,"x",null]}'
+occupy %43 sess-odd
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3\n%43\tproj\t4'
+assert_eq "$(list_of '[.[].session_id | select(. == "sess-1")]')" '["sess-1"]' \
+  "list keeps the other sessions when one file's items are not objects"
+teardown
+
 # ── a tmux session name containing spaces is kept whole ──────────────────────
 setup
 seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'

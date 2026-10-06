@@ -7,7 +7,9 @@
 # Usage:
 #   istatus-inbox.sh list
 #     Prints a JSON array, one row per live session:
-#       { session_id, pane, tmux_session, tmux_window, summary, items }
+#       { session_id, pane, tmux_session, tmux_window, summary, items, state }
+#     items is always a list of objects, whatever the file held. state is
+#     "blocked" when any item is a blocking one, else "".
 #     A session is live while its file's pane is a live tmux pane AND the
 #     pane's occupancy pointer (panes/<pane>.session_id) still names it, so
 #     a pane taken over by another session, as after /resume, drops the old
@@ -54,6 +56,12 @@ live_sessions() {
   local panes="$1" occupants="$2"
   shift 2
   jq -n -c --arg panes "$panes" --arg occupants "$occupants" '
+    # The items of a file that may be odd: a non-list counts as none, and
+    # entries that are not objects are dropped, so one odd file cannot abort
+    # the pass for every session.
+    def items_of:
+      if (.items | type) == "array" then [.items[] | select(type == "object")]
+      else [] end;
     ($panes | split("\n")
             | map(select(length > 0) | split("\t") | { key: .[0], value: { session: .[1], window: .[2] } })
             | from_entries) as $live
@@ -68,7 +76,8 @@ live_sessions() {
             tmux_session: $live[.pane].session,
             tmux_window: $live[.pane].window,
             summary,
-            items } ]
+            items: items_of,
+            state: (if any(items_of[]; .kind == "blocking") then "blocked" else "" end) } ]
   ' "$@"
 }
 
