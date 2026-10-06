@@ -7,7 +7,7 @@
 #     Adds a "blocking" item, unread, to status/<session_id>.json. Its text is
 #     the payload's `message` (a permission prompt) or, failing that, the first
 #     question of an AskUserQuestion menu; `source` is the payload's tool_name
-#     (empty for a permission prompt).
+#     (empty for a permission prompt). A payload with neither adds nothing.
 #
 #   istatus-hook.sh remove
 #     Clears blocking items the payload resolves; notices and the summary are
@@ -83,6 +83,11 @@ cmd_add() {
   read_payload
   text=$(jq -r '.message // .tool_input.questions[0].question // empty' <<<"$PAYLOAD")
   source=$(jq -r '.tool_name // empty' <<<"$PAYLOAD")
+
+  # A blocking item can only be cleared by its own resolution, so one with no
+  # text would sit in the sidebar blank. That is what a miswired matcher would
+  # add on every tool call.
+  [[ -n "$text" ]] || return 0
 
   mkdir -p "$STATUS_DIR"
   LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"

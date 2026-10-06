@@ -91,6 +91,14 @@ release_lock() {
   wait "$HOLDER"
 }
 
+# other_tool <pane> <session_id> <tool_name> — feed a PreToolUse payload for a
+# tool that carries neither a `message` nor a question.
+other_tool() {
+  local pane="$1" sid="$2" tool="$3"
+  printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{"command":"ls"}}' "$sid" "$tool" \
+    | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" add
+}
+
 # seed <session_id> <json> — write a pre-existing status file for a session.
 seed() {
   mkdir -p "$DIR/status"
@@ -198,6 +206,13 @@ resolve sess-1
 assert_eq "$(items_of sess-1 '{summary, kinds: [.items[].kind]}')" \
   '{"summary":"working on X","kinds":["notice"]}' \
   "a non-tool resolution clears blocking items and keeps the notice and summary"
+teardown
+
+# ── a payload with nothing to show records no blocking item ──────────────────
+setup
+other_tool %42 sess-1 Bash
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
+  "add records nothing when the payload has no text"
 teardown
 
 # ── an unrelated tool finishing leaves a pending menu in place ───────────────
