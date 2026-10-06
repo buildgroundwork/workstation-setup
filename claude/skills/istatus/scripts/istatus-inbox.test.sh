@@ -153,6 +153,42 @@ assert_eq "$(list_of '[.[].state]')" '[""]' \
   "list leaves the state empty when the only item is a read decide notice"
 teardown
 
+# ── each state's row says why ────────────────────────────────────────────────
+setup
+seed sess-b '{"summary":"","pane":"%41","items":[{"id":"b1","kind":"blocking","text":"needs approval","source":"","state":"unread","created_at":"2026-10-06T00:00:00Z"}]}'
+seed sess-f '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"pick a name","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+seed sess-r '{"summary":"","pane":"%43","items":[{"id":"r1","kind":"notice","text":"done task","source":"hub.ready","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+seed sess-d '{"summary":"","pane":"%44","items":[{"id":"d1","kind":"notice","text":"working task","source":"hub.dispatched","state":"read","priority":"low","created_at":"2026-10-06T00:00:00Z"}]}'
+seed sess-n '{"summary":"","pane":"%45","items":[]}'
+occupy %41 sess-b
+occupy %42 sess-f
+occupy %43 sess-r
+occupy %44 sess-d
+occupy %45 sess-n
+export ISTATUS_TMUX_PANES=$'%41\tp\t1\n%42\tp\t2\n%43\tp\t3\n%44\tp\t4\n%45\tp\t5'
+assert_eq "$(list_of '[.[] | {session_id, reason}] | sort_by(.session_id) | map(.reason)')" \
+  '["needs approval","working task","pick a name","","done task"]' \
+  "list gives each state's row the text of the item behind it"
+teardown
+
+# ── a flagged row's reason is the newest unread decide notice ────────────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"old question","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:01Z"},{"id":"n2","kind":"notice","text":"new question","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:02Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[].reason]')" '["new question"]' \
+  "list gives a flagged row the newest unread decide notice"
+teardown
+
+# ── an item whose source is not a string still gives its row a reason ────────
+setup
+seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"odd source","source":5,"state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[] | {state, reason}]')" '[{"state":"flagged","reason":"odd source"}]' \
+  "list gives a reason to a flagged row whose item source is not a string"
+teardown
+
 # ── a status file whose items is not a list does not hide the others ─────────
 setup
 seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
