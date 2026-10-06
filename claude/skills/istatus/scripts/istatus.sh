@@ -127,7 +127,14 @@ sid="${CLAUDE_CODE_SESSION_ID:-}"
 mkdir -p "$STATUS_DIR"
 STATUS_FILE="$STATUS_DIR/${sid}.json"
 LOCK_FILE="$LOCK_DIR/status-${sid}.lock"
-[[ -f "$STATUS_FILE" ]] || printf '{"summary":"","items":[]}' > "$STATUS_FILE"
+if [[ ! -f "$STATUS_FILE" ]]; then
+  # Create-if-absent without a window where the file is empty or a racing
+  # writer's seed is lost: write a temp file, then hard-link it into place.
+  seed_tmp=$(mktemp "${STATUS_FILE}.XXXXXX")
+  printf '{"summary":"","items":[]}' > "$seed_tmp"
+  ln "$seed_tmp" "$STATUS_FILE" 2>/dev/null || true
+  rm -f "$seed_tmp"
+fi
 
 # One-time migration: a file written by the pre-items version of this script
 # has `decisions` but no `items`. jq's `.items += [...]` on such a file would

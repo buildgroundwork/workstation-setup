@@ -162,7 +162,7 @@ record_blocking_item() {
   local sid="$1" text="$2" source="$3" status_file id
   status_file="$STATUS_DIR/${sid}.json"
   id=$(date -u +%Y%m%dT%H%M%SZ)-$$
-  [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
+  ensure_status_file "$status_file"
   rewrite_status "$status_file" \
     --arg id "$id" --arg text "$text" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg pane "${TMUX_PANE:-}" --arg source "$source" "$NORMALIZE_JQ"'
@@ -180,7 +180,7 @@ record_dispatch() {
   local sid="$1" pane="$2" prompt="$3" status_file id
   status_file="$STATUS_DIR/${sid}.json"
   id=$(date -u +%Y%m%dT%H%M%SZ)-$$
-  [[ -f "$status_file" ]] || printf '{"summary":"","items":[]}' > "$status_file"
+  ensure_status_file "$status_file"
   rewrite_status "$status_file" \
     --arg id "$id" --arg text "$prompt" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg pane "$pane" "$NORMALIZE_JQ"'
@@ -253,6 +253,22 @@ with_lock() {
     "$@" || status=$?
     rmdir "$lock" 2>/dev/null || true
     return "$status"
+  fi
+}
+
+# ensure_status_file <status_file> — create an empty status file if there is
+# none, without ever exposing a partial one. The seed is written to a temp file
+# and hard-linked into place: ln fails when the target exists, which makes it
+# an atomic create-if-absent, and a failure just means someone else created it
+# first. A plain `printf > file` would truncate in place, so an unlocked reader
+# could see a zero-byte file or a racing writer could lose its seed.
+ensure_status_file() {
+  local status_file="$1" seed
+  if [[ ! -f "$status_file" ]]; then
+    seed=$(mktemp "${status_file}.XXXXXX")
+    printf '{"summary":"","items":[]}' > "$seed"
+    ln "$seed" "$status_file" 2>/dev/null || true
+    rm -f "$seed"
   fi
 }
 
