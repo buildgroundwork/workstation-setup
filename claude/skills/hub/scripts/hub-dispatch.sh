@@ -22,15 +22,18 @@
 #
 #   ready
 #       List dispatched panes by state — which have FINISHED (task.ready, the
-#       Stop hook flipped them) vs. still in-flight (task.dispatched). The
-#       read-side payoff of `send` arming the pane. One line per pane:
-#       "<kind>\t<session>:<window>\t<prompt>".
+#       Stop hook turned their notice into a ready one) vs. still in-flight
+#       (task.dispatched). The read-side payoff of `send` arming the pane. One
+#       line per pane: "<state>\t<session>:<window>\t<prompt>".
 #
 # A "target" is "<session>:<window>"; send/capture operate on that window's
 # active pane. Pure-navigation, capture, and ready are read-ish; only `send`
 # types.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ISTATUS_SCRIPTS="$SCRIPT_DIR/../../istatus/scripts"
 
 err() { printf '%s\n' "$*" >&2; exit 1; }
 
@@ -130,10 +133,10 @@ cmd_send() {
     return 4
   fi
 
-  # Mark the dispatched pane as awaiting a result (state: task.dispatched), so
-  # the dashboard and popup show it in-flight and the finish-detection Stop hook
-  # can later flip it to task.ready. Best-effort: arming must never break a
-  # dispatch, so a missing plugin or a resolve failure is silently ignored.
+  # Mark the dispatched pane as awaiting a result (a hub.dispatched notice), so
+  # the status line and popup show it in flight and the Stop hook can later
+  # turn it into a ready notice. Best-effort: arming must never break a
+  # dispatch, so a failure to record it is silently ignored.
   _arm_target "$pane" "$prompt" || true
 }
 
@@ -152,48 +155,34 @@ _pane_input_pending() {
   [[ "$lastline" =~ ^[[:space:]]*[❯\>][[:space:]]+[^[:space:]] ]]
 }
 
-# Resolve the claude-tmux-attention state script. Its install path is
-# version-stamped, so find it rather than hardcode; prints the path, or empty
-# (return 1) if the plugin isn't installed.
-_state_script() {
-  local s
-  s=$(find "$HOME/.claude/plugins/cache" -name attention-state.sh -path '*claude-tmux-attention*' 2>/dev/null | sort | tail -1)
-  [[ -n "$s" && -x "$s" ]] || return 1
-  printf '%s' "$s"
-}
-
-# Arm the pane (state: task.dispatched). Takes an already-resolved pane id (the
-# caller resolves it once, up front). Returns non-zero (caller ignores) if the
-# plugin isn't installed.
+# Arm the pane (a hub.dispatched notice on the session that occupies it). Takes
+# an already-resolved pane id (the caller resolves it once, up front). The
+# prompt goes in on stdin. Returns non-zero (caller ignores) on any failure.
 _arm_target() {
-  local pane="$1" prompt="$2" state_script
-  state_script=$(_state_script) || return 1
+  local pane="$1" prompt="$2"
   [[ -n "$pane" ]] || return 1
-  "$state_script" arm "$pane" "$prompt" >/dev/null 2>&1
+  printf '%s' "$prompt" | "$ISTATUS_SCRIPTS/istatus-hook.sh" arm "$pane" >/dev/null 2>&1
 }
 
-# List dispatched panes that have FINISHED (kind: task.ready) — the read-side
-# payoff of arm: the finish-detection Stop hook flips a pane task.dispatched ->
-# task.ready when its session stops, and this surfaces those. Prints one line
-# per ready pane: "<session>:<window>\t<prompt>". Also (with a header) shows
-# still-in-flight (task.dispatched) panes so the hub can report "N ready, M
-# still working". Reads through attention-state.sh list (the supported consumer
-# API), which already filters dead panes.
+# List dispatched panes: those that have FINISHED (task.ready, the Stop hook
+# turned their dispatched notice into a ready one) and those still in flight
+# (task.dispatched), so the hub can report "N ready, M still working". One
+# line per pane: "<state>\t<session>:<window>\t<prompt>". Reads the istatus
+# inbox, which already leaves out dead panes.
 cmd_ready_list() {
-  local state_script json
-  state_script=$(_state_script) || { echo "claude-tmux-attention not installed; no dispatch state" >&2; return 1; }
-  json=$("$state_script" list 2>/dev/null) || return 1
-  # tmux_session:tmux_window<TAB>state<TAB>prompt, for dispatch states only.
-  # Reads the canonical `states` SET (claude-tmux-attention >= 0.2.0). A pane
-  # can hold several states at once (e.g. task.dispatched AND attention.needed),
-  # so emit one line per dispatch-state the pane carries. The derived `kind`
-  # field is deprecated and not read here.
-  printf '%s' "$json" | jq -r '
+  # Listed by the hub's own items, not by the session's top state: a dispatch
+  # that hit its own permission prompt is "blocked" and one with a decide open
+  # is "flagged", and either is still a dispatch the hub should count. The text
+  # is the dispatched prompt, not the blocking item's. A ready notice the human
+  # already viewed (read) is no longer listed.
+  "$ISTATUS_SCRIPTS/istatus-inbox.sh" list | jq -r '
     .[]
     | . as $row
-    | (.states // [])[]
-    | select(. == "task.ready" or . == "task.dispatched")
-    | "\(.)\t\($row.tmux_session):\($row.tmux_window)\t\($row.prompt)"
+    | $row.items[]
+    | (if .source == "hub.ready" and .state == "unread" then "task.ready"
+       elif .source == "hub.dispatched" then "task.dispatched"
+       else empty end) as $kind
+    | "\($kind)\t\($row.tmux_session):\($row.tmux_window)\t\(.text)"
   '
 }
 
@@ -211,28 +200,22 @@ cmd_capture() {
   tmux list-panes -t "$target" >/dev/null 2>&1 || err "target not found: $target"
   tmux capture-pane -t "$target" -p
   # Reading the pane back is the consume step that closes the dispatch
-  # lifecycle: dispatched -> ready -> (read) -> cleared. Without this, a
-  # finished dispatch's task.ready row lingers in the shared state file and the
-  # plugin's attention popup/status-line surface it as a phantom "needs
-  # attention". Clear ONLY a task.ready row for this pane — never a live
-  # attention.needed (a genuinely-blocked pane Adam is just looking at must
-  # keep its real attention signal). Best-effort; never fails the capture.
-  _clear_ready "$target" || true
+  # lifecycle: dispatched -> ready -> (read). Without this, a finished
+  # dispatch's ready notice would keep counting in the status line as an
+  # unviewed result. Only the ready notice is marked read, never a blocking
+  # item or a decide notice. Best-effort; never fails the capture.
+  _mark_viewed "$target" || true
 }
 
-# Mark this target's dispatch result as viewed (consumed-dispatch cleanup).
-# Reading the pane back IS the "viewed" transition. Uses the plugin's
-# `mark-viewed` (claude-tmux-attention >= 0.2.0), which by contract clears ONLY
-# the pane's task.ready state, leaving a still-running task.dispatched and any
-# attention.needed intact — so the old hand-rolled "inspect kinds, don't clobber
-# attention" guard is no longer needed; the plugin enforces that boundary.
-# Best-effort; never fails the capture.
-_clear_ready() {
-  local target="$1" state_script pane
-  state_script=$(_state_script) || return 0
+# Mark this target's dispatch result as viewed. Reading the pane back IS the
+# "viewed" transition. istatus-hook.sh viewed marks only the pane occupant's
+# unread hub.ready notices read, so the old hand-rolled "don't clobber
+# attention" guard is not needed. Best-effort; never fails the capture.
+_mark_viewed() {
+  local target="$1" pane
   pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 0
   [[ -n "$pane" ]] || return 0
-  "$state_script" mark-viewed "$pane" >/dev/null 2>&1
+  "$ISTATUS_SCRIPTS/istatus-hook.sh" viewed "$pane" >/dev/null 2>&1
 }
 
 main() {
