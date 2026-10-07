@@ -60,7 +60,7 @@ Because settings load at startup, **a session only has these hooks if it started
 
 ## Where it shows
 
-All of these read through `scripts/istatus-inbox.sh list`, which lists the live sessions (a session counts only while its pane exists and its occupancy pointer still names it, so a pane taken over by `/resume` drops the old session) with one `state` each: `blocked`, `flagged` (an unread notice that is not from the hub), `ready`, `dispatched`, or empty.
+All of these read through `scripts/istatus-inbox.sh list`, which lists the live sessions (a session counts only while a live tmux pane's occupancy pointer names it, and that pane is where it shows; a pane taken over by `/resume` drops the old session, and the pane field inside a status file is not consulted) with one `state` each: `blocked`, `flagged` (an unread notice that is not from the hub), `ready`, `dispatched`, or empty.
 
 - **The tmux status line**, `scripts/istatus-status.sh`: one colored block per non-empty state, in that order, counting sessions. Colors and glyphs can be overridden with `ISTATUS_<STATE>_FG`, `_BG` and `_GLYPH`.
 - **The popup**, `prefix` then `A` `A`, `scripts/istatus-popup.sh`: the rows, most urgent first, with the reason for each; picking one jumps to the pane and marks its finished dispatch viewed.

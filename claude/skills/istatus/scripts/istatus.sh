@@ -53,7 +53,7 @@
 #
 # State file: ~/.claude-tmux-attention/status/<session_id>.json
 #   { summary: "<current work/thinking, or empty>",
-#     pane: "<tmux pane id>",   (written by the hooks)
+#     pane: "<tmux pane id>",   (optional; written by some hooks)
 #     items: [ { id, kind, text, state, priority?, source?, created_at }, ... ] }
 #   kind: "blocking" | "notice". state: "unread" | "read" (blocking is
 #   always "unread"). priority (notice only): "high" | "normal" | "low".
@@ -62,8 +62,10 @@
 #   which is how a resolution knows what it resolves. For a hub dispatch,
 #   "hub.dispatched" (read, low) or "hub.ready" (unread when finished). A
 #   decide notice has none. Readers must tolerate its absence.
-#   pane: the tmux pane the session lives in; a reader trusts the file only
-#   while panes/<pane>.session_id still names this session.
+#   pane: informational only. istatus.sh never writes it and only some hooks
+#   do, so it is often absent, and readers must not depend on it: where a
+#   session lives, and whether it is still live, come from the pane pointers
+#   (panes/<pane>.session_id) alone.
 #   Other files in the same directory: panes/<pane>.session_id (which session
 #   occupies a pane), heartbeat/<session_id> (touched by every hook event).
 #

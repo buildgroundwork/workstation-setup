@@ -15,10 +15,14 @@
 #     hub.ready), "dispatched" (a hub.dispatched), else "". reason is the text
 #     of the item behind the state (for "flagged", the newest unread decide
 #     notice), or "" when there is no state.
-#     A session is live while its file's pane is a live tmux pane AND the
-#     pane's occupancy pointer (panes/<pane>.session_id) still names it, so
-#     a pane taken over by another session, as after /resume, drops the old
-#     session's file.
+#     A session is live while some live tmux pane's occupancy pointer
+#     (panes/<pane>.session_id) names it, and that pane is the row's pane. The
+#     pane field inside a status file is not consulted: istatus.sh never
+#     writes one and only some hooks do, so a session that only ever ran
+#     `istatus decide` would otherwise be invisible. A pane taken over by
+#     another session, as after /resume, drops the old session's file, since
+#     no pointer names it any more. If two live panes name one session it is
+#     listed once, at the first pane listed.
 #     session_id comes from the file name; the file has no such field.
 #     tmux_window is a string, as tmux prints it. With no status files it
 #     prints [] and exits 0.
@@ -56,7 +60,7 @@ cmd_list() {
 # live_sessions <live panes> <occupants> <status files...> — one jq pass over
 # the files, with the listing and the pane occupants passed in, rather than a
 # fork per file: the status line calls this every few seconds. A file counts
-# only while its pane's pointer still names it.
+# only while some live pane's pointer names its session.
 live_sessions() {
   local panes="$1" occupants="$2"
   shift 2
@@ -97,16 +101,22 @@ live_sessions() {
     ($panes | split("\n")
             | map(select(length > 0) | split("\t") | { key: .[0], value: { session: .[1], window: .[2] } })
             | from_entries) as $live
+    # Which live pane each session occupies, from the pointers alone: the pane
+    # field inside a status file is not consulted, because istatus.sh never
+    # writes one and only some hooks do. If two live panes name the same
+    # session, the first listed wins.
     | ($occupants | split("\n")
-                  | map(select(length > 0) | split("\t") | { key: .[0], value: .[1] })
-                  | from_entries) as $occupant
+                  | map(select(length > 0) | split("\t") | { key: .[1], value: .[0] })
+                  | reverse
+                  | from_entries) as $pane_of
     | [ inputs
         | (input_filename | split("/") | last | rtrimstr(".json")) as $sid
-        | select(type == "object" and (.pane | type) == "string" and $live[.pane] != null and $occupant[.pane] == $sid)
+        | ($pane_of[$sid]) as $pane
+        | select(type == "object" and $pane != null and $live[$pane] != null)
         | { session_id: $sid,
-            pane,
-            tmux_session: $live[.pane].session,
-            tmux_window: $live[.pane].window,
+            pane: $pane,
+            tmux_session: $live[$pane].session,
+            tmux_window: $live[$pane].window,
             summary,
             items: items_of,
             state: (items_of | state_of),

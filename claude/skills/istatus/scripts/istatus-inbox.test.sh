@@ -90,6 +90,18 @@ assert_eq "$(list_of '[.[].state]')" '["blocked"]' \
   "list marks a session with a blocking item as blocked"
 teardown
 
+# ── a session that only ever ran istatus decide is still listed ──────────────
+# istatus.sh never writes a pane into the file, only the hooks do, so the pane
+# has to come from the occupancy pointer.
+setup
+seed sess-1 '{"summary":"","items":[{"id":"n1","kind":"notice","text":"pick a name","state":"unread","priority":"normal","created_at":"2026-10-07T00:00:00Z"}]}'
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
+assert_eq "$(list_of '[.[] | {session_id, pane, state}]')" \
+  '[{"session_id":"sess-1","pane":"%42","state":"flagged"}]' \
+  "list shows a session whose file has no pane, using the pane its pointer names"
+teardown
+
 # ── a session with an unread decide notice is flagged ────────────────────────
 setup
 seed sess-1 '{"summary":"","pane":"%42","items":[{"id":"n1","kind":"notice","text":"pick a name","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]}'
@@ -251,14 +263,30 @@ assert_eq "$(list_of '[.[].session_id]')" '["sess-1"]' \
   "list skips a status file that is not a JSON object"
 teardown
 
-# ── a status file whose pane is not a string is skipped ──────────────────────
+# ── the pane written in a status file is not what places the session ────────
+# It used to be, which is why a file with a pane of the wrong type had its own
+# case. The pointer decides now, so a pane of the wrong type, or a stale one,
+# changes nothing.
 setup
-seed sess-1 '{"summary":"working on X","pane":"%42","items":[]}'
-occupy %42 sess-1
 seed sess-num '{"summary":"s","pane":42,"items":[]}'
-export ISTATUS_TMUX_PANES=$'%42\tproj\t3'
-assert_eq "$(list_of '[.[].session_id]')" '["sess-1"]' \
-  "list skips a status file whose pane is not a string"
+occupy %43 sess-num
+seed sess-stale '{"summary":"s","pane":"%99","items":[]}'
+occupy %44 sess-stale
+export ISTATUS_TMUX_PANES=$'%43\tproj\t3\n%44\tproj\t4'
+assert_eq "$(list_of '[.[] | {session_id, pane}] | sort_by(.session_id)')" \
+  '[{"session_id":"sess-num","pane":"%43"},{"session_id":"sess-stale","pane":"%44"}]' \
+  "list places a session by its pointer, whatever pane its file says"
+teardown
+
+# ── a session named by two live panes is listed once ─────────────────────────
+setup
+seed sess-1 '{"summary":"s","items":[]}'
+occupy %41 sess-1
+occupy %42 sess-1
+export ISTATUS_TMUX_PANES=$'%41\tproj\t1\n%42\tproj\t2'
+assert_eq "$(list_of '[.[] | {session_id, pane}]')" \
+  '[{"session_id":"sess-1","pane":"%41"}]' \
+  "list shows a session named by two live panes once, at the first listed"
 teardown
 
 # ── every status file is malformed ───────────────────────────────────────────
