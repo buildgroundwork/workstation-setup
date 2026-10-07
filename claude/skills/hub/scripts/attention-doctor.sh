@@ -2,10 +2,10 @@
 # Detects Claude sessions whose istatus hooks have silently stopped firing (the
 # boot-burst race on `mux` launch, or the mid-session hook drop — see the
 # Notion thread "Fix silent hook-registration loss in claude-tmux-attention").
-# Detection only: this never restarts or reloads anything, since
-# /reload-plugins has not proven reliable and a scripted restart risks killing
-# a pane mid-task. It reports which sessions need a by-hand /reload-plugins or
-# restart, so Adam decides per session.
+# Detection only: this never restarts anything, since a scripted restart
+# risks killing a pane mid-task. It reports which sessions need a by-hand
+# restart (the hooks are in settings.json, which a session reads when it
+# starts), so Adam decides per session.
 #
 # Method: for each tmuxinator project with a claude window, find its live
 # transcript's session_id and mtime. Every istatus hook event touches
@@ -100,7 +100,7 @@ main() {
 
   if (( ${#dead[@]} > 0 )); then
     echo
-    echo "Sessions with dead istatus hooks (need /reload-plugins or a restart):"
+    echo "Sessions with dead istatus hooks (need a restart):"
     local d
     for d in "${dead[@]}"; do
       echo "  - $d"
