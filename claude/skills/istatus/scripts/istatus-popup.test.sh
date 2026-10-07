@@ -153,5 +153,68 @@ assert_eq "$(rows)" "wants you${TAB}proj:3${TAB}odd source${TAB}${TAB}%42" \
   "a flagged row still shows when its item's source is not a string"
 teardown
 
+# ── the popup jumps and exits cleanly ────────────────────────────────────────
+# `tmux run-shell` shows any non-zero exit in view mode over the pane, and
+# nothing may be left behind in the temp dir. tmux is a stub first on PATH:
+# display-popup "picks" the first row by writing it to the file named in
+# -e ISTATUS_OUTPUT=..., and every other tmux command does nothing.
+make_stub_tmux() {
+  mkdir -p "$DIR/bin" "$DIR/tmp"
+  cat > "$DIR/bin/tmux" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "${TMUX_CALLS:-/dev/null}"
+if [[ "$1" == "display-popup" ]]; then
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -e) export "$2"; shift 2 ;;
+      --) break ;;
+      *) shift ;;
+    esac
+  done
+  head -1 "$ISTATUS_INPUT" > "$ISTATUS_OUTPUT"
+fi
+exit 0
+STUB
+  chmod +x "$DIR/bin/tmux"
+}
+
+# run_popup -> the popup's exit status as rc=N, with the stub tmux first on
+# PATH and TMPDIR pointing at a scratch dir.
+run_popup() {
+  PATH="$DIR/bin:$PATH" TMPDIR="$DIR/tmp" "$SCRIPT" >/dev/null 2>&1 </dev/null
+  echo "rc=$?"
+}
+
+setup
+make_stub_tmux
+live_session sess-1 %42 "working on X" "[$(blocking "needs approval")]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+assert_eq "$(run_popup)" "rc=0" \
+  "the popup exits 0 after a jump"
+teardown
+
+# ── the popup switches to the pane that was picked ───────────────────────────
+setup
+make_stub_tmux
+live_session sess-1 %42 "working on X" "[$(blocking "needs approval")]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+export TMUX_CALLS="$DIR/tmux-calls.log"
+run_popup > /dev/null
+assert_eq "$(grep -c '^switch-client -t %42$' "$TMUX_CALLS")" "1" \
+  "the popup switches the client to the picked pane"
+unset TMUX_CALLS
+teardown
+
+# ── the popup leaves no temp files behind ────────────────────────────────────
+setup
+make_stub_tmux
+live_session sess-1 %42 "working on X" "[$(blocking "needs approval")]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+run_popup > /dev/null
+assert_eq "$(compgen -G "$DIR/tmp/istatus-popup.*" >/dev/null && echo leftovers || echo clean)" "clean" \
+  "the popup removes its temp files"
+teardown
+
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

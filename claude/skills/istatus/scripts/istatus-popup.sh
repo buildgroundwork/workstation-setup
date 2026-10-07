@@ -32,10 +32,12 @@ cmd_rows() {
     | @tsv'
 }
 
-# Pick a session in fzf, inside a tmux popup, and jump to it. Not unit-tested:
-# it needs a live tmux and a terminal, so it is exercised end to end.
+# Pick a session in fzf, inside a tmux popup, and jump to it. Tested with a
+# stub tmux for its exit status, its cleanup and the switch it makes; the real
+# fzf and popup rendering need a live tmux and a terminal, so they are
+# exercised end to end.
 cmd_popup() {
-  local rows input output selected pane
+  local rows input output
   rows=$(cmd_rows)
   if [[ -z "$rows" ]]; then
     tmux display-message "No sessions need attention"
@@ -44,11 +46,26 @@ cmd_popup() {
 
   # `tmux display-popup -E` opens a fresh pty for the inner command, so an
   # outer pipe does not reach fzf's stdin. The list goes in through a temp file
-  # and the selection comes back through another.
-  input=$(mktemp -t istatus-popup.XXXXXX)
-  output=$(mktemp -t istatus-popup.XXXXXX)
-  trap 'rm -f "$input" "$output"' EXIT
+  # and the selection comes back through another. They are removed explicitly
+  # when the pick is done, not by an EXIT trap: a trap runs after this function
+  # has returned, when its locals are gone, and under `set -u` it dies, which
+  # made every jump exit 1 (tmux shows that over the pane) and leak both files.
+  # The template names $TMPDIR itself: `mktemp -t` uses the user's temp dir
+  # whatever $TMPDIR says.
+  input=$(mktemp "${TMPDIR:-/tmp}/istatus-popup.XXXXXX")
+  output=$(mktemp "${TMPDIR:-/tmp}/istatus-popup.XXXXXX")
   printf '%s\n' "$rows" > "$input"
+  # The `|| true` also turns off `set -e` inside pick_and_jump. That is
+  # deliberate: every step in it is best-effort, and a failure falls through
+  # harmlessly to the cleanup below.
+  pick_and_jump "$input" "$output" || true
+  rm -f "$input" "$output"
+}
+
+# pick_and_jump <input file> <output file> — show the rows in fzf in a popup
+# and, if one is picked, mark its pane viewed and switch to it.
+pick_and_jump() {
+  local input="$1" output="$2" selected pane
 
   tmux display-popup -E -w 80% -h 60% -T " Claude sessions " \
     -e "ISTATUS_INPUT=$input" -e "ISTATUS_OUTPUT=$output" -- \
