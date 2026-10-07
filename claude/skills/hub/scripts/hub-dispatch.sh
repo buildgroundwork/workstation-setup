@@ -167,22 +167,27 @@ _arm_target() {
 # List dispatched panes: those that have FINISHED (task.ready, the Stop hook
 # turned their dispatched notice into a ready one) and those still in flight
 # (task.dispatched), so the hub can report "N ready, M still working". One
-# line per pane: "<state>\t<session>:<window>\t<prompt>". Reads the istatus
-# inbox, which already leaves out dead panes.
+# line per pane: "<state>\t<session>:<window>\t<prompt>", with tabs and
+# newlines in the prompt turned into spaces so a multi-line prompt stays on
+# one line. Reads the istatus inbox, which already leaves out dead panes.
 cmd_ready_list() {
   # Listed by the hub's own items, not by the session's top state: a dispatch
   # that hit its own permission prompt is "blocked" and one with a decide open
   # is "flagged", and either is still a dispatch the hub should count. The text
   # is the dispatched prompt, not the blocking item's. A ready notice the human
-  # already viewed (read) is no longer listed.
+  # already seen (read) is still listed: focusing the pane marks it read, and
+  # dropping it then would hide a finished result the hub has not read back,
+  # and disagree with hub-wait, which counts a seen ready notice as finished.
+  # It stays listed until `capture` consumes it or the pane is dispatched to
+  # again.
   "$ISTATUS_SCRIPTS/istatus-inbox.sh" list | jq -r '
     .[]
     | . as $row
     | $row.items[]
-    | (if .source == "hub.ready" and .state == "unread" then "task.ready"
+    | (if .source == "hub.ready" then "task.ready"
        elif .source == "hub.dispatched" then "task.dispatched"
        else empty end) as $kind
-    | "\($kind)\t\($row.tmux_session):\($row.tmux_window)\t\(.text)"
+    | "\($kind)\t\($row.tmux_session):\($row.tmux_window)\t\(.text // "" | tostring | gsub("[\t\n\r]"; " "))"
   '
 }
 
@@ -200,22 +205,24 @@ cmd_capture() {
   tmux list-panes -t "$target" >/dev/null 2>&1 || err "target not found: $target"
   tmux capture-pane -t "$target" -p
   # Reading the pane back is the consume step that closes the dispatch
-  # lifecycle: dispatched -> ready -> (read). Without this, a finished
-  # dispatch's ready notice would keep counting in the status line as an
-  # unviewed result. Only the ready notice is marked read, never a blocking
-  # item or a decide notice. Best-effort; never fails the capture.
-  _mark_viewed "$target" || true
+  # lifecycle: dispatched -> ready -> (seen) -> read back and cleared. Adam
+  # looking at the pane only marks the ready notice seen (the focus hook and
+  # the popup do that); the hub has not read the result until it captures, and
+  # that is what makes `ready` stop listing it. Only the finished dispatch's
+  # notice goes, never a blocking item or a decide notice. Best-effort; never
+  # fails the capture.
+  _consume_result "$target" || true
 }
 
-# Mark this target's dispatch result as viewed. Reading the pane back IS the
-# "viewed" transition. istatus-hook.sh viewed marks only the pane occupant's
-# unread hub.ready notices read, so the old hand-rolled "don't clobber
+# Consume this target's dispatch result. Reading the pane back IS the point
+# at which the hub has the result. istatus-hook.sh consume removes only the
+# pane occupant's hub.ready notices, so the old hand-rolled "don't clobber
 # attention" guard is not needed. Best-effort; never fails the capture.
-_mark_viewed() {
+_consume_result() {
   local target="$1" pane
   pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 0
   [[ -n "$pane" ]] || return 0
-  "$ISTATUS_SCRIPTS/istatus-hook.sh" viewed "$pane" >/dev/null 2>&1
+  "$ISTATUS_SCRIPTS/istatus-hook.sh" consume "$pane" >/dev/null 2>&1
 }
 
 main() {

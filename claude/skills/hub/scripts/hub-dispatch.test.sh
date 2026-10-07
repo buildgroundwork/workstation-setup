@@ -98,12 +98,23 @@ assert_eq "$(ready)" "task.ready${TAB}proj:3${TAB}run the migration" \
   "ready lists a finished dispatch whose session is also flagged, with the prompt"
 teardown
 
-# ── a finished dispatch that was already viewed is not listed ────────────────
+# ── a finished dispatch that was already viewed is still listed ──────────────
+# Focusing the pane marks the ready notice read. If that dropped it from
+# `ready`, the hub could not report a result Adam happened to glance at, and
+# hub-wait, which counts a read ready notice as finished, would disagree.
 setup
 live_session sess-1 %42 "[$(hub_notice r1 "run the migration" read hub.ready)]"
 export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
-assert_eq "$(ready)" "" \
-  "ready leaves out a finished dispatch that was already viewed"
+assert_eq "$(ready)" "task.ready${TAB}proj:3${TAB}run the migration" \
+  "ready lists a finished dispatch that was already viewed as task.ready"
+teardown
+
+# ── a prompt with tabs or newlines is still one line per pane ────────────────
+setup
+live_session sess-1 %42 "[$(hub_notice r1 $'run\tthe\nmigration' unread hub.ready)]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+assert_eq "$(ready)" "task.ready${TAB}proj:3${TAB}run the migration" \
+  "ready turns tabs and newlines in a prompt into spaces"
 teardown
 
 echo "$PASS passed, $FAIL failed"
