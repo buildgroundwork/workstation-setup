@@ -160,6 +160,16 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh remove"
+          }
+        ]
+      }
+    ],
     "PermissionDenied": [
       {
         "hooks": [
