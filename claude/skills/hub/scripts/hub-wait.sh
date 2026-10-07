@@ -22,9 +22,10 @@
 #      notice into a ready one, whether or not anyone has looked at it since);
 #      prints the settled pane contents.
 #   2  timed out before finishing or blocking.
-#   3  pane was never armed (exits on the first look), or stopped being an
-#      armed dispatch while waiting (superseded by a newer dispatch, the pane
-#      died, or a /resume moved it), seen on two polls in a row.
+#   3  pane is not an armed dispatch: it was never armed, or it stopped being
+#      one while waiting (superseded by a newer dispatch, the pane died, or a
+#      /resume moved it). Seen on two polls in a row, so a wrong target takes
+#      one interval to report.
 #   4  BLOCKED — the dispatched session hit its own permission prompt (a
 #      blocking item appeared for the pane). It can't proceed without
 #      the user approving in that pane, so return early instead of waiting to
@@ -73,16 +74,14 @@ pane_state() {
 
 # Poll until the pane finishes (ready), blocks on its own prompt, stops being a
 # dispatch, or times out. A pane that was never armed (wrong pane, or nothing
-# dispatched) ends the same way on the first look as one that loses its
-# dispatch later: exit 3.
+# dispatched) ends the same way as one that loses its dispatch later: exit 3.
 #
 # One empty read can be a transient (tmux busy, so the inbox sees no live
 # panes), and exiting 3 would make the hub think the dispatch is gone and
-# resend it. So after the first look, a pane has to read as no dispatch twice
-# in a row before the wait gives up; a pane that is no dispatch on the very
-# first look is the common wrong-target case and exits 3 at once.
+# resend it. So a pane has to read as no dispatch twice in a row before the
+# wait gives up, the first look included. The price is one interval before a
+# wrong target is reported.
 elapsed=0
-polls=0
 misses=0
 while :; do
   case "$(pane_state)" in
@@ -99,7 +98,7 @@ while :; do
       # one, the pane died, or a /resume moved the pane to another session).
       # Nothing will ever finish it, so don't poll forever.
       misses=$((misses + 1))
-      if (( polls == 0 || misses >= 2 )); then
+      if (( misses >= 2 )); then
         printf 'pane %s (%s) is not an armed dispatch\n' "$pane" "$target" >&2
         exit 3
       fi ;;
@@ -111,5 +110,4 @@ while :; do
   }
   sleep "$interval"
   elapsed=$((elapsed + interval))
-  polls=$((polls + 1))
 done

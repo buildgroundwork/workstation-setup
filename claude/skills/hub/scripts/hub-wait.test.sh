@@ -126,6 +126,21 @@ assert_eq "$(wait_for 6)" 'rc=3' \
 wait "$bg"
 teardown
 
+# ── a first look that misses the dispatch for one poll is still waited on ───
+# The same transient (tmux busy, so the inbox sees no live panes) can hit the
+# very first poll. The dispatch shows up before the second one, then finishes.
+setup
+live_session sess-1 '[]'
+( sleep 0.4
+  live_session sess-1 "[$(hub_notice d1 "run the migration" read hub.dispatched)]"
+  sleep 1.6
+  live_session sess-1 "[$(hub_notice r1 "run the migration" unread hub.ready)]" ) &
+bg=$!
+assert_eq "$(wait_for 15)" $'CAPTURE\nrc=0' \
+  "a dispatch missing on the first look only is still waited on"
+wait "$bg"
+teardown
+
 # ── a dispatch that blinks out for one poll is still waited on ───────────────
 # One empty read can be a transient (tmux busy, so the inbox sees no live
 # panes). The status goes empty between two polls and comes back before the
