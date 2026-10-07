@@ -108,7 +108,8 @@ die() { printf 'istatus-hook: %s\n' "$*" >&2; exit 1; }
 # migration would then keep only our items and drop every legacy decision.
 # Convert the same way that migration does (each decision becomes an unread,
 # normal-priority notice; an existing `items` takes precedence), then drop
-# `decisions`. Unlike that migration, other keys such as `pane` are kept.
+# `decisions`. Other keys such as `pane` are kept, as they are by that
+# migration (which used to rebuild the file and drop them).
 NORMALIZE_JQ='
   def normalize:
     if has("decisions") or (has("items") | not) then

@@ -157,19 +157,21 @@ fi
 # file: each old decision becomes a "notice", unread, default priority. Also
 # fires if `decisions` is still lingering even when `items` is ALREADY
 # present (a file written by a transient bad version of this migration) —
-# drop the dead key either way, items (if any) take precedence.
+# drop the dead key either way, items (if any) take precedence. Every other
+# key is kept: the hooks record the session's pane in the same file.
 if jq -e 'has("decisions") or (has("items") | not)' "$STATUS_FILE" >/dev/null 2>&1; then
   migrate_tmp=$(mktemp "${STATUS_FILE}.XXXXXX")
   jq '
-    { summary: (.summary // ""),
-      items: (
-        if has("items") then .items
-        else [ (.decisions // [])[]
+    . as $file
+    | del(.decisions)
+    | .summary = (.summary // "")
+    | .items = (
+        if $file | has("items") then $file.items
+        else [ ($file.decisions // [])[]
           | { id, kind: "notice", text, state: "unread", priority: "normal", created_at }
         ]
         end
       )
-    }
   ' "$STATUS_FILE" > "$migrate_tmp" && mv "$migrate_tmp" "$STATUS_FILE" || rm -f "$migrate_tmp"
 fi
 
