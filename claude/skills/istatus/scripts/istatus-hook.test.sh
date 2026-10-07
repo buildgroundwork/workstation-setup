@@ -388,6 +388,36 @@ assert_eq "$(items_of sess-2 '[.items[] | {source, state, priority, text}]')" \
   "stop turns a dispatched notice into an unread ready notice"
 teardown
 
+# ── a stopped session has nothing left to answer ─────────────────────────────
+# Once the main turn has stopped, no permission prompt or menu can still be
+# pending, so a blocking item still there was missed by its resolution.
+setup
+add %42 sess-1 "Claude needs your permission to use Bash"
+stop %42 sess-1
+assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
+  "stop clears a blocking item its resolution missed"
+teardown
+
+# ── stop clears blocking items but not the notices beside them ──────────────
+setup
+seed sess-1 "$(jq -c '.items += [{"id":"b1","kind":"blocking","text":"needs approval","source":"","state":"unread","created_at":"2026-10-07T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
+stop %42 sess-1
+assert_eq "$(items_of sess-1 '{summary, kinds: [.items[].kind]}')" \
+  '{"summary":"working on X","kinds":["notice"]}' \
+  "stop keeps a session's notices and summary when it clears a blocking item"
+teardown
+
+# ── stop settles a dispatch and a missed block in one write ──────────────────
+setup
+start %50 sess-2
+arm %50 "run the migration"
+add %50 sess-2 "Claude needs your permission to use Bash"
+stop %50 sess-2
+assert_eq "$(items_of sess-2 '[.items[] | {kind, source}]')" \
+  '[{"kind":"notice","source":"hub.ready"}]' \
+  "stop turns a dispatch into a ready notice and clears a block together"
+teardown
+
 # ── a file with no dispatched notice is left as it is ────────────────────────
 setup
 seed sess-2 "$(jq -c '.items += [{"id":"r2","kind":"notice","text":"done task","source":"hub.ready","state":"read","priority":"normal","created_at":"2026-10-05T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"

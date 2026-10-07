@@ -65,6 +65,12 @@
 #     Known race: a prompt dispatched into a pane that is mid-turn queues, and
 #     the CURRENT turn's Stop reports it ready before it has run. A send that
 #     fails is not armed, so it raises no false ready.
+#     It also drops the session's blocking items (notices are kept): once the
+#     main turn has stopped no permission prompt or menu can still be pending,
+#     so one still there was missed by its resolution, and this is the
+#     backstop. Known limit: a background subagent that hits a permission
+#     prompt after its parent's turn has ended has that item cleared by the
+#     parent's NEXT Stop, while the prompt is still up.
 
 set -euo pipefail
 
@@ -148,15 +154,16 @@ cmd_stop() {
   local status_file
   read_payload
 
-  # Stop fires at the end of every turn in every session, so both checks run
-  # before taking the lock: no status file, or no dispatched item in it, means
-  # there is nothing to do. Writers replace the file atomically, so an unlocked
-  # read sees a whole file; at worst it misses an arm that lands right after.
+  # Stop fires at the end of every turn in every session, so the checks run
+  # before taking the lock: no status file, or neither a dispatched nor a
+  # blocking item in it, means there is nothing to do. Writers replace the file
+  # atomically, so an unlocked read sees a whole file; at worst it misses an
+  # arm that lands right after.
   status_file="$STATUS_DIR/${SESSION_ID}.json"
   [[ -f "$status_file" ]] || return 0
-  has_dispatched_item "$status_file" || return 0
+  has_dispatched_item "$status_file" || has_blocking_item "$status_file" || return 0
   LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"
-  with_lock raise_ready_notice "$status_file"
+  with_lock settle_stopped_session "$status_file"
 }
 
 # Run by the hub, not by the target session, so TMUX_PANE here is the hub's
@@ -285,15 +292,20 @@ has_item() {
   jq -e "[.items[] | select($2)] | length > 0" "$1" >/dev/null 2>&1
 }
 
-# The read-modify-write for stop. Runs under the session lock. Phase lives in
-# `source`, not in read/unread: a ready notice the human deferred is read but
-# is not dispatched, so it must not be raised again on the next Stop.
-raise_ready_notice() {
+# The read-modify-write for stop. Runs under the session lock. A dispatched
+# notice becomes an unread ready one. Phase lives in `source`, not in
+# read/unread: a ready notice the human deferred is read but is not dispatched,
+# so it must not be raised again on the next Stop. Blocking items are dropped:
+# once the main turn has stopped no permission prompt or menu can still be
+# pending, so one still there was missed by its resolution (a tool failing,
+# or the add and remove hooks landing out of order). Notices are kept.
+settle_stopped_session() {
   rewrite_status "$1" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
     .items |= map(
       if .source == "hub.dispatched"
       then .source = "hub.ready" | .state = "unread" | .priority = "normal" | .created_at = $ts
       else . end)
+    | .items |= map(select(.kind != "blocking"))
   '
 }
 
