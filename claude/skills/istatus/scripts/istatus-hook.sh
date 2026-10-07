@@ -47,6 +47,16 @@
 #     session through the pane's pointer, is a silent no-op without one, and
 #     never reads TMUX_PANE. It takes no lock unless there is something to mark.
 #
+#   istatus-hook.sh consume <target-pane>   (run by the hub after capture)
+#     Removes the "hub.ready" notices, read or not, of the session that
+#     occupies <target-pane>. Looking at a pane (viewed) only marks the ready
+#     notice read; the hub has not read the result back until it captures the
+#     pane, and that is what ends the dispatch, so `ready` stops listing it.
+#     A dispatch still in flight, decide notices and blocking items are left.
+#     Like viewed it uses the pane's pointer, is a silent no-op without one,
+#     takes no lock unless there is something to remove, and never reads
+#     TMUX_PANE.
+#
 #   istatus-hook.sh clear-pane <target-pane>   (run by hand)
 #     Force-removes the blocking items of the session that occupies
 #     <target-pane>; notices and the summary are untouched. The escape hatch
@@ -185,30 +195,41 @@ cmd_arm() {
 # notices read. Decide notices and blocking items are never touched, since
 # looking at a pane does not answer them.
 cmd_viewed() {
-  local target="$1" sid status_file
-  sid=$(session_in_pane "$target") || return 0
+  # The check runs before taking the lock: a focus event fires constantly, and
+  # almost always there is no unread finished dispatch to mark.
+  update_pane_session "$1" has_unread_ready_item mark_ready_read
+}
 
-  # Checked before taking the lock: a focus event fires constantly, and almost
-  # always there is no unread finished dispatch to mark.
-  status_file="$STATUS_DIR/${sid}.json"
-  [[ -f "$status_file" ]] || return 0
-  has_unread_ready_item "$status_file" || return 0
-  LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
-  with_lock mark_ready_read "$status_file"
+# Run by the hub after it reads a pane's result back (capture), which is what
+# ends a dispatch: the result has been consumed, not just seen. Removes the
+# session's finished-dispatch notices, read or not, so `ready` stops listing
+# them. A dispatch still in flight, decide notices and blocking items stay.
+# Addressed by pane, so it never reads TMUX_PANE.
+cmd_consume() {
+  update_pane_session "$1" has_ready_item drop_ready_items
 }
 
 # The manual escape hatch for a prompt that was interrupted with Esc, where no
 # resolution hook fires and the blocking item would otherwise stay. Addressed by
 # pane like viewed, so it never reads TMUX_PANE. Removes only blocking items.
 cmd_clear_pane() {
-  local target="$1" sid status_file
+  update_pane_session "$1" has_blocking_item drop_blocking_items
+}
+
+# update_pane_session <pane> <has fn> <write fn> — the skeleton the commands
+# addressed by pane share. Find the session through the pane's pointer, and if
+# its status file passes the cheap unlocked check <has fn>, run <write fn> on
+# it under the session lock. A pane with no known session, no status file, or
+# nothing to do takes no lock.
+update_pane_session() {
+  local target="$1" has="$2" write="$3" sid status_file
   sid=$(session_in_pane "$target") || return 0
 
   status_file="$STATUS_DIR/${sid}.json"
   [[ -f "$status_file" ]] || return 0
-  has_blocking_item "$status_file" || return 0
+  "$has" "$status_file" || return 0
   LOCK_FILE="$ATTENTION_DIR/status-${sid}.lock"
-  with_lock drop_blocking_items "$status_file"
+  with_lock "$write" "$status_file"
 }
 
 # The session id that the pane's occupancy pointer names. Fails when the pane
@@ -283,6 +304,7 @@ record_dispatch() {
 
 has_blocking_item() { has_item "$1" '.kind == "blocking"'; }
 has_unread_ready_item() { has_item "$1" '.source == "hub.ready" and .state == "unread"'; }
+has_ready_item() { has_item "$1" '.source == "hub.ready"'; }
 has_dispatched_item() { has_item "$1" '.source == "hub.dispatched"'; }
 
 # has_item <status_file> <jq predicate> — does any item satisfy the predicate?
@@ -315,6 +337,11 @@ mark_ready_read() {
     .items |= map(if .source == "hub.ready" and .state == "unread"
                   then .state = "read" else . end)
   '
+}
+
+# The read-modify-write for consume. Runs under the session lock.
+drop_ready_items() {
+  rewrite_status "$1" '.items |= map(select(.source != "hub.ready"))'
 }
 
 # The read-modify-write for clear-pane. Runs under the session lock.
@@ -412,6 +439,7 @@ case "${1:-}" in
   arm)        cmd_arm "${2:-}" ;;
   stop)       cmd_stop ;;
   viewed)     cmd_viewed "${2:-}" ;;
+  consume)    cmd_consume "${2:-}" ;;
   clear-pane) cmd_clear_pane "${2:-}" ;;
-  *)          die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop|viewed <pane>|clear-pane <pane>" ;;
+  *)          die "usage: istatus-hook.sh add|remove|start|arm <pane>|stop|viewed <pane>|consume <pane>|clear-pane <pane>" ;;
 esac

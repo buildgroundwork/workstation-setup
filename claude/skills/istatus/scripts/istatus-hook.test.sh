@@ -105,6 +105,12 @@ viewed() {
   TMUX=fake TMUX_PANE=%1 "$SCRIPT" viewed "$1" </dev/null
 }
 
+# consume <target_pane> — run as the hub (TMUX_PANE is not the target's) after
+# reading the target pane's result back.
+consume() {
+  TMUX=fake TMUX_PANE=%1 "$SCRIPT" consume "$1" </dev/null
+}
+
 # clear_pane <target_pane> — run from another pane (TMUX_PANE is not the
 # target's) to force-clear the target pane's blocking items by hand.
 clear_pane() {
@@ -435,6 +441,18 @@ viewed %50
 assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
   '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"read"}]' \
   "viewed marks a ready notice read and leaves a decide notice unread"
+teardown
+
+# ── reading a result back consumes the finished dispatch and nothing else ────
+# Looking at a pane marks the ready notice read, but the hub has not read the
+# result back until it captures the pane. That is what ends the dispatch.
+setup
+start %50 sess-2
+seed sess-2 "$(jq -c '.items += [{"id":"r1","kind":"notice","text":"done task","source":"hub.ready","state":"read","priority":"normal","created_at":"2026-10-07T00:00:00Z"},{"id":"b1","kind":"blocking","text":"needs approval","source":"","state":"unread","created_at":"2026-10-07T00:00:01Z"}]' <<<"$SEED_WITH_NOTICE")"
+consume %50
+assert_eq "$(items_of sess-2 '[.items[] | {kind, source}]')" \
+  '[{"kind":"notice","source":null},{"kind":"blocking","source":""}]' \
+  "consume removes the finished dispatch and keeps the decide notice and the block"
 teardown
 
 # ── clearing a pane by hand removes its blocking items and nothing else ──────

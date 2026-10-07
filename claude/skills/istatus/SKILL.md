@@ -64,5 +64,5 @@ All of these read through `scripts/istatus-inbox.sh list`, which lists the live 
 
 - **The tmux status line**, `scripts/istatus-status.sh`: one colored block per non-empty state, in that order, counting sessions. Colors and glyphs can be overridden with `ISTATUS_<STATE>_FG`, `_BG` and `_GLYPH`.
 - **The popup**, `prefix` then `A` `A`, `scripts/istatus-popup.sh`: the rows, most urgent first, with the reason for each; picking one jumps to the pane and marks its finished dispatch viewed.
-- **Focusing a pane** (a `pane-focus-in` tmux hook) marks that pane's finished hub dispatch read. Only that; a decide notice or a blocking item still needs an answer.
+- **Focusing a pane** (a `pane-focus-in` tmux hook) marks that pane's finished hub dispatch read. Only that; a decide notice or a blocking item still needs an answer. The hub's `capture` goes one step further and removes the finished dispatch (`istatus-hook.sh consume`), because that is when the hub has read the result.
 - **`prefix` `A` `C`** force-clears the blocking items of the current pane, for a prompt you interrupted with Esc (that fires no hook, so the item would stay). It does not answer the prompt, it only stops istatus tracking it.
