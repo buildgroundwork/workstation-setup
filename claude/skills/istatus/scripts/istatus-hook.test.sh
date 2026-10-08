@@ -250,6 +250,17 @@ assert_eq "$(items_of sess-1 '[.items[] | {kind, source}]')" \
   "a different tool completing does not clear a pending menu"
 teardown
 
+# ── a resolution that clears nothing does not rewrite the status file ───────
+setup
+ask_question %42 sess-1 "Which database?"
+before=$(stat -f %m "$DIR/status/sess-1.json")
+sleep 1
+complete_tool sess-1 Bash
+after=$(stat -f %m "$DIR/status/sess-1.json")
+assert_eq "$before" "$after" \
+  "a different tool completing does not rewrite the status file"
+teardown
+
 # ── the tool that raised a menu finishing clears it ──────────────────────────
 setup
 ask_question %42 sess-1 "Which database?"

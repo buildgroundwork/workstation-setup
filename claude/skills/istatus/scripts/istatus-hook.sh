@@ -308,11 +308,16 @@ has_unread_ready_item() { has_item "$1" '.source == "hub.ready" and .state == "u
 has_ready_item() { has_item "$1" '.source == "hub.ready"'; }
 has_dispatched_item() { has_item "$1" '.source == "hub.dispatched"'; }
 
-# has_item <status_file> <jq predicate> — does any item satisfy the predicate?
-# Used for the cheap unlocked checks before a hot-path hook takes the lock. A
-# file jq cannot read (a legacy file with no items) counts as having none.
+# has_item <status_file> <jq predicate> [jq-arg-flags...] — does any item
+# satisfy the predicate? Used for the cheap unlocked checks before a hot-path
+# hook takes the lock. A file jq cannot read (a legacy file with no items)
+# counts as having none. Extra args are forwarded to jq (--arg NAME value,
+# ...) so a predicate can reference $-bound variables instead of shell-
+# interpolating untrusted values into the program text.
 has_item() {
-  jq -e "[.items[] | select($2)] | length > 0" "$1" >/dev/null 2>&1
+  local file="$1" predicate="$2"
+  shift 2
+  jq -e "$@" "[.items[] | select($predicate)] | length > 0" "$file" >/dev/null 2>&1
 }
 
 # The read-modify-write for stop. Runs under the session lock. A dispatched
@@ -350,20 +355,34 @@ drop_blocking_items() {
   rewrite_status "$1" '.items |= map(select(.kind != "blocking"))'
 }
 
+# The jq predicate shared by clear_resolved_items' no-op check and its
+# rewrite: does this resolution payload resolve THIS item? A payload with no
+# tool resolves every blocking item. A tool-bearing one resolves the items it
+# raised, plus permission prompts (empty source) unless it came from a
+# subagent, whose auto-approved tools finish while the parent still waits.
+RESOLVES_DEF='
+  def resolves($tool; $agent):
+    .kind == "blocking"
+    and ($tool == ""
+         or (if (.source // "") == "" then $agent == "" else .source == $tool end));
+'
+
 # The read-modify-write for remove. Runs under the session lock.
+#
+# This fires on every tool call in every session, so most calls reach this
+# function with a blocking item present but NOT raised by this particular
+# resolution (e.g. an unrelated tool finishing while a menu is still
+# pending). Checking first whether anything actually matches `resolves`
+# avoids rewriting the file when nothing would change: same array content
+# either way, so there is nothing to gain from replacing it on disk.
 clear_resolved_items() {
   local status_file="$1" tool="$2" agent="$3"
-  rewrite_status "$status_file" --arg tool "$tool" --arg agent "$agent" '
-    # Does this resolution payload resolve this item? A payload with no tool
-    # resolves every blocking item. A tool-bearing one resolves the items it
-    # raised, plus permission prompts (empty source) unless it came from a
-    # subagent, whose auto-approved tools finish while the parent still waits.
-    def resolves($tool; $agent):
-      .kind == "blocking"
-      and ($tool == ""
-           or (if (.source // "") == "" then $agent == "" else .source == $tool end));
-    .items = [ .items[] | select(resolves($tool; $agent) | not) ]
-  '
+  has_item "$status_file" "$RESOLVES_DEF resolves(\$tool; \$agent)" \
+    --arg tool "$tool" --arg agent "$agent" || return 0
+  rewrite_status "$status_file" --arg tool "$tool" --arg agent "$agent" "
+    $RESOLVES_DEF
+    .items = [ .items[] | select(resolves(\$tool; \$agent) | not) ]
+  "
 }
 
 # Same lock istatus.sh takes (status-<sid>.lock in the attention dir; flock when
