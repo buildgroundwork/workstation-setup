@@ -72,9 +72,11 @@
 #     Stop does not fire when a turn is interrupted with Esc, so an
 #     interrupted dispatch stays a read "hub.dispatched" notice until the next
 #     arm replaces it. A ready notice the human deferred (read) is left alone.
-#     Known race: a prompt dispatched into a pane that is mid-turn queues, and
-#     the CURRENT turn's Stop reports it ready before it has run. A send that
-#     fails is not armed, so it raises no false ready.
+#     Possible race: a prompt dispatched into a pane that is mid-turn queues.
+#     When observed, Claude Code folded it into the running turn, so that
+#     turn's Stop came after it had run. If a queued prompt ever runs as its
+#     own later turn instead, the current turn's Stop reports it ready first.
+#     A send that fails is not armed, so it raises no false ready.
 #     It also drops the session's blocking items (notices are kept): once the
 #     main turn has stopped no permission prompt or menu can still be pending,
 #     so one still there was missed by its resolution, and this is the
