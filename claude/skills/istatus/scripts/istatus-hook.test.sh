@@ -224,6 +224,15 @@ assert_eq "$(items_of sess-1 '[.items[] | {kind, text}]')" \
   "AskUserQuestion PreToolUse records the question as the item text"
 teardown
 
+# ── a menu's own permission_prompt duplicate is not recorded ─────────────────
+setup
+ask_question %42 sess-1 "Which database?"
+add %42 sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(items_of sess-1 '[.items[] | {kind, source}]')" \
+  '[{"kind":"blocking","source":"AskUserQuestion"}]' \
+  "a Notification add is skipped while an AskUserQuestion block is pending"
+teardown
+
 # ── a non-tool resolution clears blocking items and leaves notices alone ─────
 setup
 seed sess-1 "$SEED_WITH_NOTICE"

@@ -269,6 +269,16 @@ beat() {
 }
 
 # The read-modify-write for add. Runs under the session lock.
+#
+# An AskUserQuestion menu's PreToolUse fires before its own permission_prompt
+# Notification does (observed live, ~7s apart): the menu IS a tool use, and
+# Claude Code's permission system still raises its generic "needs your
+# permission" notification for it on top of the PreToolUse add this hook
+# already recorded. Without a guard both land as separate blocking items for
+# the one pending menu. The guard is narrow and one-directional: skip ONLY a
+# Notification (no tool_name) arriving while an AskUserQuestion block is
+# already pending. A tool-sourced add is never skipped by this check — it is
+# not the duplicate this guards against.
 record_blocking_item() {
   local sid="$1" text="$2" source="$3" status_file id
   status_file="$STATUS_DIR/${sid}.json"
@@ -280,7 +290,10 @@ record_blocking_item() {
     normalize
     # Record the pane only when known, so an add without one cannot erase it.
     | (if $pane != "" then .pane = $pane else . end)
-    | .items += [ { id: $id, kind: "blocking", text: $text, source: $source, state: "unread", created_at: $ts } ]
+    | (if $source == "" and ([.items[] | select(.kind == "blocking" and .source == "AskUserQuestion")] | length > 0)
+       then .
+       else .items += [ { id: $id, kind: "blocking", text: $text, source: $source, state: "unread", created_at: $ts } ]
+       end)
   '
 
   record_pane_occupant "$sid"
