@@ -45,11 +45,6 @@
 #   per live session, "blocked" (any blocking item) > "flagged" (an unread
 #   notice that is not from the hub) > "ready" (an unread hub.ready) >
 #   "dispatched" (a hub.dispatched) > "".
-#   TRANSITIONAL: cmd_decide and _maybe_clear_attention below still call
-#   claude-tmux-attention's request-human/mark-viewed. Nothing reads that now
-#   that the plugin is disabled, and those calls are to be deleted. Delete them
-#   BEFORE the plugin is uninstalled: _resolve_state_sh dies when the plugin's
-#   cache path is gone, which would make `istatus decide` fail.
 #
 # State file: ~/.claude-tmux-attention/status/<session_id>.json
 #   { summary: "<current work/thinking, or empty>",
@@ -79,9 +74,10 @@
 #   istatus decide [--priority=high|normal|low] <<'EOF'
 #   <the open question/decision/notice for the human>
 #   EOF
-#     Adds a "notice" item (default priority: normal) AND raises the
-#     attention flag (human.requested on this pane) — same producer iflag
-#     used. Prints the new item's id.
+#     Adds a "notice" item (default priority: normal). An unread notice is
+#     what istatus-inbox.sh reads as "flagged" — the status line and popup
+#     pick it up directly from this file, no separate flag to raise. Prints
+#     the new item's id.
 #
 #   istatus defer <id-or-#>
 #     Marks a notice "read": seen, deliberately left for later. Stays in the
@@ -125,7 +121,6 @@
 
 set -euo pipefail
 
-PLUGIN_CACHE="$HOME/.claude/plugins/cache/gusto-claude-code/claude-tmux-attention"
 STATUS_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/status"
 PANES_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/panes"
 LOCK_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
@@ -215,21 +210,6 @@ with_lock() {
   fi
 }
 
-# Resolve attention-state.sh once (newest installed plugin version wins, same
-# as iflag). TRANSITIONAL: only decide (request-human) and the
-# zero-unread-remaining case (mark-viewed) still call into this — see the
-# design note at the top of the file. A later step migrates the hook
-# producers themselves to write "blocking" items directly into THIS file,
-# at which point this bridge and pending.json's human.requested both go away.
-_resolve_state_sh() {
-  local state_sh
-  state_sh=$(ls -d "$PLUGIN_CACHE"/*/scripts/attention-state.sh 2>/dev/null \
-    | sort -V | tail -1) || true
-  [[ -n "${state_sh:-}" && -x "$state_sh" ]] \
-    || die "attention-state.sh not found under $PLUGIN_CACHE (plugin installed?)"
-  printf '%s' "$state_sh"
-}
-
 _read_stdin_body() {
   local label="$1"
   [[ -t 0 ]] && die "no $label on stdin. Use a heredoc: istatus $label <<'EOF' … EOF"
@@ -270,10 +250,6 @@ _resolve_ref_to_id() {
 
 _item_count() {
   jq '.items | length' "$STATUS_FILE"
-}
-
-_unread_count() {
-  jq '[.items[] | select(.kind == "blocking" or .state == "unread")] | length' "$STATUS_FILE"
 }
 
 _add_item() {
@@ -332,17 +308,6 @@ _set_summary() {
   mv "$tmp" "$STATUS_FILE"
 }
 
-# TRANSITIONAL bridge to claude-tmux-attention — see the design note up top
-# and the comment on _resolve_state_sh. Clears human.requested only when
-# nothing in this session's list is unread any longer.
-_maybe_clear_attention() {
-  [[ -n "${TMUX_PANE:-}" ]] || return 0
-  [[ "$(_unread_count)" -eq 0 ]] || return 0
-  local state_sh
-  state_sh=$(_resolve_state_sh)
-  "$state_sh" mark-viewed "$TMUX_PANE" || true
-}
-
 cmd_decide() {
   local priority="normal"
   while [[ "${1:-}" == --priority=* ]]; do
@@ -360,14 +325,6 @@ cmd_decide() {
 
   local id
   id=$(with_lock _add_item notice "$text" "$priority") || exit 1
-
-  # Raise human.requested on this pane, same producer iflag used. cwd is
-  # best-effort context, same as iflag. TRANSITIONAL — see design note.
-  local state_sh payload
-  state_sh=$(_resolve_state_sh)
-  payload=$(jq -nc --arg sid "$sid" --arg msg "$text" --arg cwd "$PWD" \
-    '{session_id: $sid, message: $msg, cwd: $cwd}') || die "failed to build payload"
-  printf '%s' "$payload" | "$state_sh" request-human || die "attention-state.sh request-human failed"
 
   printf 'istatus: notice recorded (id=%s, priority=%s) — "%s"\n' "$id" "$priority" "$text"
 }
@@ -404,7 +361,6 @@ cmd_resolve() {
   fi
 
   with_lock _remove_item "$id" || exit 1
-  _maybe_clear_attention
 
   local remaining
   remaining=$(_item_count)
