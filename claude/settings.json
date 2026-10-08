@@ -231,7 +231,6 @@
     "gerold@gusto-claude-code": true,
     "jira-acli@gusto-claude-code": true,
     "gh-cli@gusto-claude-code": true,
-    "claude-tmux-attention@gusto-claude-code": false,
     "Notion@claude-plugins-official": true,
     "github@claude-plugins-official": true,
     "figma@claude-plugins-official": true,

@@ -78,6 +78,6 @@ The long-lived "dispatch, babysit, follow up, report" task-runner is the hub ses
 
 ## Relationship to other pieces
 
-- **istatus** (`skills/istatus/`) — owns the per-session status files, the hooks that write them, the inbox reader the hub calls, and the `prefix+A A` popup and status-line segment that show the hub's dispatches alongside everything else. It replaces the old `claude-tmux-attention` plugin, which is disabled.
+- **istatus** (`skills/istatus/`) — owns the per-session status files, the hooks that write them, the inbox reader the hub calls, and the `prefix+A A` popup and status-line segment that show the hub's dispatches alongside everything else. It replaces the old `claude-tmux-attention` plugin, which is uninstalled.
 - **`/today`** — Adam's Notion orientation reader. A natural driver: run `/today`, let its priorities suggest what to dispatch where, then dispatch each with confirmation.
 - **`~/.workstation`** — the dotfiles repo. The hub skill, `workstation.yml`, the `settings.json` hooks, and `setup.sh` wiring all live there, version-controlled.
