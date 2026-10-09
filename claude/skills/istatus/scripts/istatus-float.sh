@@ -17,10 +17,9 @@
 #     Moves the keyboard into the status pane, or back to the Claude pane
 #     from it, opening it expanded if it is closed.
 #
-# Floating panes are new in tmux 3.7, and resize-pane on one also resizes the
-# tiled pane under it (verified on 3.7c), so expanding and collapsing close
-# the status pane and open a new one at the other size instead. The sidebar
-# keeps its view across that through its own state file.
+# Needs tmux 3.8 or later, which sizes and places a floating pane by its
+# border and can resize and move one in place. (3.7 sized them by content,
+# and resizing one also resized the tiled panes under it.)
 #
 # The status pane is marked with the pane option @istatus_paired (the Claude
 # pane it shows) and @istatus_expanded, which is how a later call finds it and
@@ -65,18 +64,11 @@ cmd_expand() {
   local pane="$1" paired="$2" status="$3"
   if [[ -z "$status" ]]; then
     open "$paired" expanded background
-    return
-  fi
-  local expanded
-  expanded=$(tmux display-message -p -t "$status" '#{@istatus_expanded}')
-  tmux kill-pane -t "$status"
-  if [[ "$expanded" == 1 ]]; then
-    open "$paired" collapsed background
+  elif [[ "$(tmux display-message -p -t "$status" '#{@istatus_expanded}')" == 1 ]]; then
+    reshape "$status" "$paired" collapsed
     hand_back "$pane" "$status" "$paired"
-  elif [[ "$pane" == "$status" ]]; then
-    open "$paired" expanded foreground
   else
-    open "$paired" expanded background
+    reshape "$status" "$paired" expanded
   fi
 }
 
@@ -100,12 +92,44 @@ hand_back() {
   return 0
 }
 
-# open <paired> collapsed|expanded background|foreground — a floating status
-# pane INSET cells in from the window's top-right corner: one for its border
-# and the rest a gap, so it reads as a box rather than part of the edge. Its
-# border also takes the row below it and the column left of it.
+# open <paired> collapsed|expanded background|foreground — a new status pane.
 open() {
-  local paired="$1" shape="$2" focus="$3" ww wh w h new
+  local paired="$1" shape="$2" focus="$3" w h x y new
+  read -r w h x y < <(geometry "$paired" "$shape")
+  local args=(-P -F '#{pane_id}' -t "$paired" -x "$w" -y "$h" -X "$x" -Y "$y")
+  [[ "$focus" == foreground ]] || args=(-d "${args[@]}")
+  new=$(tmux new-pane "${args[@]}" "$SIDEBAR" "$paired")
+  tmux set-option -p -t "$new" @istatus_paired "$paired"
+  mark "$new" "$shape"
+}
+
+# reshape <status> <paired> collapsed|expanded — resizes and moves the status
+# pane in place, so the sidebar in it keeps running. A pane growing moves left
+# first and one shrinking moves right last, so it never reaches past the
+# window's right edge, where tmux would clip it.
+reshape() {
+  local status="$1" paired="$2" shape="$3" w h x y
+  read -r w h x y < <(geometry "$paired" "$shape")
+  if [[ "$shape" == expanded ]]; then
+    tmux move-pane -t "$status" -X "$x" -Y "$y"
+    tmux resize-pane -t "$status" -x "$w" -y "$h"
+  else
+    tmux resize-pane -t "$status" -x "$w" -y "$h"
+    tmux move-pane -t "$status" -X "$x" -Y "$y"
+  fi
+  mark "$status" "$shape"
+}
+
+mark() {
+  tmux set-option -p -t "$1" @istatus_expanded "$([[ "$2" == expanded ]] && echo 1 || echo 0)"
+}
+
+# geometry <paired> collapsed|expanded -> "width height x y" of the status
+# pane's border box. Its content sits INSET cells in from the window's
+# top-right corner: one for the border and the rest a gap, so it reads as a
+# box rather than part of the edge.
+geometry() {
+  local paired="$1" shape="$2" ww wh w h
   read -r ww wh < <(tmux display-message -p -t "$paired" '#{window_width} #{window_height}')
   local room_w=$(( ww - INSET - 1 )) room_h=$(( wh - INSET - 1 ))
   if [[ "$shape" == collapsed ]]; then
@@ -118,11 +142,8 @@ open() {
     h=$(( h < 3 ? 3 : h ))
     h=$(( h > room_h ? room_h : h ))
   fi
-  local args=(-P -F '#{pane_id}' -t "$paired" -x "$w" -y "$h" -X "$(( ww - w - INSET ))" -Y "$INSET")
-  [[ "$focus" == foreground ]] || args=(-d "${args[@]}")
-  new=$(tmux new-pane "${args[@]}" "$SIDEBAR" "$paired")
-  tmux set-option -p -t "$new" @istatus_paired "$paired"
-  tmux set-option -p -t "$new" @istatus_expanded "$([[ "$shape" == expanded ]] && echo 1 || echo 0)"
+  # w and h are the content; the border adds a cell on every side.
+  printf '%s %s %s %s\n' "$(( w + 2 ))" "$(( h + 2 ))" "$(( ww - w - INSET - 1 ))" "$(( INSET - 1 ))"
 }
 
 # The Claude pane a key was pressed for: the pane itself, or, when it is the

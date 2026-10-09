@@ -5,9 +5,9 @@
 #
 # Each case runs against a real, private tmux server (its own socket, started
 # with -f /dev/null so no tmux.conf or hooks load), because floating panes are
-# new in tmux 3.7 and a stub would hide exactly the behavior that matters:
-# resize-pane on a floating pane also resizes the tiled pane under it. TMUX
-# points the script's plain `tmux` calls at that server. The sidebar really
+# new and a stub would hide exactly the behavior that matters, such as how a
+# resize treats the tiled panes. Needs tmux 3.8 or later. TMUX points the
+# script's plain `tmux` calls at that server. The sidebar really
 # runs in the floating pane, against an empty scratch state dir.
 # No `set -e`: a failing script must surface as a FAIL line from assert_eq.
 #
@@ -117,6 +117,20 @@ fp=$(status_pane)
 assert_eq "$(shape "$fp"):$(geometry "$fp" | cut -d: -f1-4):$(tmux display-message -p -t "$MAIN" '#{pane_width}x#{pane_height}')" \
   "expanded:1:$MAIN:2:118:120x40" \
   "expand grows the floating pane in place and does not resize the Claude pane"
+teardown
+
+# ── expand and collapse keep the same pane ───────────────────────────────────
+# Resized in place, so the sidebar keeps running, and its view with it.
+setup
+float toggle "$MAIN"
+before=$(status_pane)
+float expand "$MAIN"
+expanded=$(status_pane)
+expanded_shape=$(shape "$expanded")
+float expand "$MAIN"
+assert_eq "$expanded_shape:$(shape "$(status_pane)"):$([[ "$expanded" == "$before" && "$(status_pane)" == "$before" ]] && echo same)" \
+  "expanded:collapsed:same" \
+  "expand and collapse resize the status pane in place instead of replacing it"
 teardown
 
 # ── expand again collapses it ────────────────────────────────────────────────

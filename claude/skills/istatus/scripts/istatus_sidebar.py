@@ -156,57 +156,16 @@ class Selection:
         self.select(items, (self.index(items) or 0) + delta)
 
 
-class Memory:
-    """What the sidebar was showing, kept across a restart, since
-    istatus-float.sh replaces the pane to expand or collapse it. One file per
-    paired pane, under the state directory's sidebar/."""
-
-    def __init__(self, root: str, pane: str):
-        self.path = os.path.join(root, "sidebar", f"{pane}.json")
-
-    def load(self) -> dict:
-        try:
-            with open(self.path) as f:
-                state = json.load(f)
-        except (OSError, ValueError):
-            return {}
-        return state if isinstance(state, dict) else {}
-
-    def save(self, state: dict) -> None:
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        tmp = f"{self.path}.{os.getpid()}"
-        with open(tmp, "w") as f:
-            json.dump(state, f)
-        os.replace(tmp, self.path)
-
-
 class Sidebar:
 
     def __init__(self, pane: str, root: str):
         self.pane = pane
         self.root = root
-        self.memory = Memory(root, pane)
         self.showing_done = False
         # One selection per view, so switching back lands where you left off.
         self.selections = {False: Selection(), True: Selection()}
         self.message = None
         self.top = 0
-        self.recall()
-
-    def recall(self) -> None:
-        state = self.memory.load()
-        self.showing_done = bool(state.get("done"))
-        selected = state.get("selected") or {}
-        self.selections[False].id = selected.get("open")
-        self.selections[True].id = selected.get("done")
-
-    def remember(self) -> None:
-        try:
-            self.memory.save({"done": self.showing_done,
-                              "selected": {"open": self.selections[False].id,
-                                           "done": self.selections[True].id}})
-        except OSError:
-            pass  # Losing the view on the next restart is not worth a crash.
 
     @property
     def selection(self) -> Selection:
@@ -230,7 +189,6 @@ class Sidebar:
                 continue
             self.message = None
             self.handle(key, view)
-            self.remember()
 
     def handle(self, key: int, view: View) -> None:
         items = self.listed(view)

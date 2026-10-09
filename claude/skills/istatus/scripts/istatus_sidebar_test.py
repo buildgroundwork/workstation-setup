@@ -168,33 +168,6 @@ class TitleBarTest(unittest.TestCase):
         self.assertEqual(sidebar.title_bar("%9", [notice("n1")], 12), "      1 new ")
 
 
-class MemoryTest(unittest.TestCase):
-    """What the sidebar was showing, kept across a restart: istatus-float.sh
-    replaces the pane to expand or collapse it."""
-
-    def setUp(self):
-        self.dir = tempfile.TemporaryDirectory()
-
-    def tearDown(self):
-        self.dir.cleanup()
-
-    def test_what_is_saved_loads_back(self):
-        state = {"done": True, "selected": {"open": "n1", "done": "n2"}}
-        sidebar.Memory(self.dir.name, "%9").save(state)
-        self.assertEqual(sidebar.Memory(self.dir.name, "%9").load(), state)
-
-    def test_each_pane_keeps_its_own(self):
-        sidebar.Memory(self.dir.name, "%9").save({"done": True})
-        self.assertEqual(sidebar.Memory(self.dir.name, "%8").load(), {})
-
-    def test_an_unreadable_file_loads_nothing(self):
-        memory = sidebar.Memory(self.dir.name, "%9")
-        memory.save({"done": True})
-        with open(memory.path, "w") as f:
-            f.write("{not json")
-        self.assertEqual(memory.load(), {})
-
-
 class LoadTest(unittest.TestCase):
 
     def setUp(self):
