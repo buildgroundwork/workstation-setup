@@ -95,5 +95,44 @@ assert_eq "$(attn_of proj)" "waiting" \
   "a tmux session with several Claude sessions resolves to the most urgent"
 teardown
 
+# ── fitting the dashboard pane ───────────────────────────────────────────────
+# These run against a real, private tmux server (its own socket, -f /dev/null
+# so no tmux.conf loads): a main pane over a 7-row dashboard pane, as in a
+# hub window. tmux 3.7c loses tiled rows when a pane is resized while the
+# window has a floating pane, which only a real server shows.
+tmux_setup() {
+  setup
+  tmux -S "$DIR/sock" -f /dev/null new-session -d -x 120 -y 40 'sleep 300'
+  export TMUX="$DIR/sock,0,0"
+  MAIN=$(tmux display-message -p '#{pane_id}')
+  DASH=$(tmux split-window -d -v -l 7 -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+}
+tmux_teardown() { tmux kill-server 2>/dev/null; unset TMUX; teardown; }
+
+# fit <rows> — fit the dashboard pane to <rows>, as the loop does each frame.
+fit() { ( source "$SCRIPT"; TMUX_PANE="$DASH" fit_pane "$1" ) 2>/dev/null </dev/null; }
+
+# tiled_rows -> the rows the tiled panes cover, borders included; the window's
+# height when the layout fits.
+tiled_rows() {
+  tmux list-panes -t "$MAIN" -f '#{!=:#{pane_floating_flag},1}' -F '#{pane_height}' \
+    | awk '{ s += $1 } END { print s + NR - 1 }'
+}
+
+# ── the dashboard fits itself to its content ─────────────────────────────────
+tmux_setup
+fit 5
+assert_eq "$(tmux display-message -p -t "$DASH" '#{pane_height}'):$(tiled_rows)" "5:40" \
+  "fitting resizes the dashboard pane to its content"
+tmux_teardown
+
+# ── with a floating pane open, fitting leaves the layout whole ───────────────
+tmux_setup
+tmux new-pane -d -x 30 -y 1 -X 88 -Y 2 'sleep 300'
+fit 6
+assert_eq "$(tiled_rows):$(tmux display-message -p -t "$DASH" '#{pane_height}')" "40:7" \
+  "fitting holds the dashboard's height while a floating pane is open"
+tmux_teardown
+
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
