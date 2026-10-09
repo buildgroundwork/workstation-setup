@@ -7,11 +7,12 @@
 # be the status pane itself):
 #   istatus-float.sh toggle <pane>
 #     Shows the window's status pane, collapsed to its one-row title bar
-#     (counts only), or closes it if it is showing.
+#     (counts only), or closes it if it is showing. Closing it while it has
+#     the keyboard gives the keyboard to the Claude pane.
 #   istatus-float.sh expand <pane>
 #     Switches it between collapsed and expanded (the full, interactive
-#     list), opening it expanded if it is closed. The keyboard stays where
-#     it was.
+#     list), opening it expanded if it is closed. Expanding keeps the
+#     keyboard where it was; collapsing gives it to the Claude pane.
 #   istatus-float.sh focus <pane>
 #     Moves the keyboard into the status pane, or back to the Claude pane
 #     from it, opening it expanded if it is closed.
@@ -30,6 +31,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SIDEBAR="$SCRIPT_DIR/istatus-sidebar.sh"
 COLLAPSED_COLS=44
+INSET=2
 
 die() { printf 'istatus-float: %s\n' "$*" >&2; exit 1; }
 
@@ -40,7 +42,7 @@ main() {
   paired=$(paired_pane "$pane")
   status=$(status_pane "$paired")
   case "$subcmd" in
-    toggle) cmd_toggle "$paired" "$status" ;;
+    toggle) cmd_toggle "$pane" "$paired" "$status" ;;
     expand) cmd_expand "$pane" "$paired" "$status" ;;
     focus)  cmd_focus "$pane" "$paired" "$status" ;;
     *)      die "usage: istatus-float.sh {toggle|expand|focus} <pane>" ;;
@@ -48,25 +50,34 @@ main() {
 }
 
 cmd_toggle() {
-  local paired="$1" status="$2"
+  local pane="$1" paired="$2" status="$3"
   if [[ -n "$status" ]]; then
     tmux kill-pane -t "$status"
+    hand_back "$pane" "$status" "$paired"
   else
     open "$paired" collapsed background
   fi
 }
 
+# Expanding keeps the keyboard where it was. Collapsing gives it back to the
+# Claude pane: a one-row bar shows nothing to act on.
 cmd_expand() {
   local pane="$1" paired="$2" status="$3"
   if [[ -z "$status" ]]; then
     open "$paired" expanded background
     return
   fi
-  local shape=expanded focus=background
-  [[ "$(tmux display-message -p -t "$status" '#{@istatus_expanded}')" == 1 ]] && shape=collapsed
-  [[ "$pane" == "$status" ]] && focus=foreground
+  local expanded
+  expanded=$(tmux display-message -p -t "$status" '#{@istatus_expanded}')
   tmux kill-pane -t "$status"
-  open "$paired" "$shape" "$focus"
+  if [[ "$expanded" == 1 ]]; then
+    open "$paired" collapsed background
+    hand_back "$pane" "$status" "$paired"
+  elif [[ "$pane" == "$status" ]]; then
+    open "$paired" expanded foreground
+  else
+    open "$paired" expanded background
+  fi
 }
 
 cmd_focus() {
@@ -80,23 +91,34 @@ cmd_focus() {
   fi
 }
 
+# hand_back <pane> <status> <paired> — after the status pane closed or
+# collapsed, gives the keyboard to the Claude pane if the status pane had it.
+# Left to itself, tmux picks whichever pane was active before, which may be
+# neither.
+hand_back() {
+  [[ "$1" == "$2" ]] && tmux select-pane -t "$3"
+  return 0
+}
+
 # open <paired> collapsed|expanded background|foreground — a floating status
-# pane flush with the window's top-right corner. Its border takes the row
-# below it and the column left of it.
+# pane INSET cells in from the window's top-right corner: one for its border
+# and the rest a gap, so it reads as a box rather than part of the edge. Its
+# border also takes the row below it and the column left of it.
 open() {
   local paired="$1" shape="$2" focus="$3" ww wh w h new
   read -r ww wh < <(tmux display-message -p -t "$paired" '#{window_width} #{window_height}')
+  local room_w=$(( ww - INSET - 1 )) room_h=$(( wh - INSET - 1 ))
   if [[ "$shape" == collapsed ]]; then
-    w=$(( ww < COLLAPSED_COLS ? ww : COLLAPSED_COLS ))
+    w=$(( room_w < COLLAPSED_COLS ? room_w : COLLAPSED_COLS ))
     h=1
   else
     w=$(( ww / 3 > COLLAPSED_COLS ? ww / 3 : COLLAPSED_COLS ))
-    w=$(( w > ww ? ww : w ))
+    w=$(( w > room_w ? room_w : w ))
     h=$(( wh * 2 / 3 ))
     h=$(( h < 3 ? 3 : h ))
-    h=$(( h > wh - 1 ? wh - 1 : h ))
+    h=$(( h > room_h ? room_h : h ))
   fi
-  local args=(-P -F '#{pane_id}' -t "$paired" -x "$w" -y "$h" -X "$(( ww - w ))" -Y 0)
+  local args=(-P -F '#{pane_id}' -t "$paired" -x "$w" -y "$h" -X "$(( ww - w - INSET ))" -Y "$INSET")
   [[ "$focus" == foreground ]] || args=(-d "${args[@]}")
   new=$(tmux new-pane "${args[@]}" "$SIDEBAR" "$paired")
   tmux set-option -p -t "$new" @istatus_paired "$paired"

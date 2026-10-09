@@ -76,11 +76,12 @@ assert_eq() {
   fi
 }
 
-# ── toggle opens a collapsed status pane in the top-right corner ─────────────
+# ── toggle opens a collapsed status pane near the top-right corner ───────────
+# Two cells in from the top and the right: one for its border, one for a gap.
 setup
 float toggle "$MAIN"
-assert_eq "$(geometry "$(status_pane)")" "1:$MAIN:0:120:1" \
-  "toggle opens a one-row floating pane, paired with the pane, flush top right"
+assert_eq "$(geometry "$(status_pane)")" "1:$MAIN:2:118:1" \
+  "toggle opens a one-row floating pane, paired with the pane, inset from the top right"
 teardown
 
 # ── toggle leaves the keyboard with the Claude pane ──────────────────────────
@@ -114,7 +115,7 @@ float toggle "$MAIN"
 float expand "$MAIN"
 fp=$(status_pane)
 assert_eq "$(shape "$fp"):$(geometry "$fp" | cut -d: -f1-4):$(tmux display-message -p -t "$MAIN" '#{pane_width}x#{pane_height}')" \
-  "expanded:1:$MAIN:0:120:120x40" \
+  "expanded:1:$MAIN:2:118:120x40" \
   "expand grows the floating pane in place and does not resize the Claude pane"
 teardown
 
@@ -161,6 +162,31 @@ float expand "$(status_pane)"
 fp=$(status_pane)
 assert_eq "$(count):$(shape "$fp"):$([[ "$(active)" == "$fp" ]] && echo focused)" "1:expanded:focused" \
   "expand keeps the keyboard in the status pane when it had it"
+teardown
+
+# ── collapsing a focused status pane hands the keyboard to its Claude pane ───
+# A third pane was active last, so a plain last-pane would land there.
+setup
+other=$(tmux split-window -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float expand "$MAIN"
+fp=$(status_pane)
+tmux select-pane -t "$other"
+tmux select-pane -t "$fp"
+float expand "$fp"
+assert_eq "$(shape "$(status_pane)"):$(active)" "collapsed:$MAIN" \
+  "collapsing the status pane while it has the keyboard moves it to the Claude pane"
+teardown
+
+# ── closing a focused status pane hands the keyboard to its Claude pane ──────
+setup
+other=$(tmux split-window -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float toggle "$MAIN"
+fp=$(status_pane)
+tmux select-pane -t "$other"
+tmux select-pane -t "$fp"
+float toggle "$fp"
+assert_eq "$(count):$(active)" "0:$MAIN" \
+  "closing the status pane while it has the keyboard moves it to the Claude pane"
 teardown
 
 echo "$PASS passed, $FAIL failed"
