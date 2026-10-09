@@ -44,16 +44,33 @@ render() {
     printf '\033[1mWorking on:\033[0m\n %s\n\n' "$summary"
   fi
 
-  local decision_count
-  decision_count=$(jq '.decisions | length' "$status_file" 2>/dev/null) || decision_count=0
+  local item_count
+  item_count=$(jq '.items | length' "$status_file" 2>/dev/null) || item_count=0
 
-  if [[ "$decision_count" -eq 0 ]]; then
-    printf '\033[2m(no open decisions)\033[0m\n'
+  if [[ "$item_count" -eq 0 ]]; then
+    printf '\033[2m(nothing open)\033[0m\n'
     return
   fi
 
-  printf '\033[1mNeeds you (%s):\033[0m\n' "$decision_count"
-  jq -r '.decisions[] | "  [\(.id)]\n  " + .text + "\n"' "$status_file" 2>/dev/null
+  # Same order istatus resolve's ordinals use: blocking first, then notices by
+  # priority, then oldest first. Read notices are dimmed; they stay listed
+  # until resolved.
+  printf '\033[1mOpen (%s):\033[0m\n' "$item_count"
+  jq -r '
+    .items
+    | sort_by(
+        (if .kind == "blocking" then 0 else 1 end),
+        (if .kind == "notice" then
+           (if .priority == "high" then 0 elif .priority == "low" then 2 else 1 end)
+         else 0 end),
+        .created_at)
+    | to_entries[]
+    | .key as $i | .value
+    | (if .kind == "blocking" then "\u001b[31mblocked\u001b[0m"
+       elif .state == "read" then "\u001b[2mread\u001b[0m"
+       else "\u001b[35munread\u001b[0m" end) as $tag
+    | "  [\($i + 1)] \($tag)  " + .text + "\n"
+  ' "$status_file" 2>/dev/null
 }
 
 render
