@@ -49,6 +49,8 @@ Whenever what you're actively doing changes in a way that would surprise someone
 
 `istatus` writes its state regardless of whether a sidebar is actually displayed anywhere — the record is useful on its own (Adam can always `istatus show` by hand), and the sidebar is an optional viewer on top of it. To attach a live sidebar to a pane: `~/.workstation/claude/skills/istatus/scripts/istatus-attach.sh` (run from inside the pane to attach to, or pass a pane id as an argument to attach from elsewhere). This is Adam's call to make, not something a session should do to its own pane unprompted.
 
+The sidebar (`scripts/istatus_sidebar.py`, started through `istatus-sidebar.sh`) is interactive once focused: `j`/`k` select an item, `r` marks a notice read, `u` marks it unread, and `e` resolves it, all through `istatus --pane`. A blocking item ignores those keys, since only answering its prompt clears it. It refreshes once a second, so a sidebar shows a `/resume` into its pane, and changes from the session, without a keypress. It needs `python3`; macOS's own 3.9 is enough.
+
 ## What else writes this file: the hooks
 
 The commands above are what a session runs on purpose. Other items in the same file come from Claude Code hooks, wired in global `~/.claude/settings.json`, which call `scripts/istatus-hook.sh`:
