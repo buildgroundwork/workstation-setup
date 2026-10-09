@@ -80,10 +80,16 @@
 #     the new item's id.
 #
 #   istatus defer <id-or-#>
+#   istatus defer --all
 #     Marks a notice "read": seen, deliberately left for later. Stays in the
 #     list (doesn't disappear), but drops out of the unread/attention count.
 #     Refuses on a blocking item — those can't be deferred, only resolved by
-#     actually responding to the underlying prompt.
+#     actually responding to the underlying prompt. --all marks every notice
+#     read and leaves blocking items alone.
+#
+#   istatus undefer <id-or-#>
+#     The reverse of defer: marks a read notice unread again. Refuses on a
+#     blocking item, which is always unread.
 #
 #   istatus resolve <id-or-#>
 #     Removes the item entirely. For a notice, this is "done, acted on." For
@@ -109,12 +115,21 @@
 #     renderer and by the session itself to check what it's already said
 #     before deciding whether an update is needed.
 #
+# Usage (run from OUTSIDE the session, by the popup and the sidebar):
+#   istatus --pane <pane> {defer|undefer|resolve|show} ...
+#     Acts on the session that occupies <pane>, found through
+#     panes/<pane>.session_id, instead of on $CLAUDE_CODE_SESSION_ID. Only the
+#     commands that act on items already there: decide and summary speak for
+#     a session, so only the session runs them. Fails if no session is
+#     recorded for the pane or it has no status file, and never writes an
+#     occupancy pointer for the caller's own pane.
+#
 # Reason/summary text is read from STDIN, never an argument — same rationale
 # as isend/iflag: the permission scanner inspects the raw command line before
 # shell quoting, so metachars in an argument (globs, braces-with-quotes) trip
-# a prompt even with Bash(istatus:*) allowlisted. Only `decide [--priority=…]`
-# / `defer <id>` / `resolve <id>` / `summary` / `show` appear as args; free
-# text never does.
+# a prompt even with Bash(istatus:*) allowlisted. Only `--pane <pane>`,
+# `decide [--priority=…]`, `defer <id>|--all`, `undefer <id>`, `resolve <id>`,
+# `summary` and `show` appear as args; free text never does.
 #
 # Exit: 0 on success (each mutator prints a short confirmation); non-zero with
 # a message on stderr on misuse or a missing dependency — never silent.
@@ -128,13 +143,42 @@ LOCK_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
 die() { printf 'istatus: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'istatus: WARNING: %s\n' "$*" >&2; }
 
-sid="${CLAUDE_CODE_SESSION_ID:-}"
-[[ -n "$sid" ]] \
-  || die "CLAUDE_CODE_SESSION_ID not set (not inside a Claude session?) — cannot update status"
+# --pane <pane> acts on the session that occupies <pane> rather than on the
+# caller's own. It is how the popup and the sidebar, which run from tmux and
+# not inside any Claude session, mark another session's items read, unread or
+# resolved. The session comes from the pane's occupancy pointer, the same
+# source istatus-inbox.sh trusts.
+TARGET_PANE=""
+if [[ "${1:-}" == --pane ]]; then
+  [[ -n "${2:-}" ]] || die "usage: istatus --pane <pane> {defer|undefer|resolve|show} ..."
+  TARGET_PANE="$2"
+  shift 2
+fi
+
+if [[ -n "$TARGET_PANE" ]]; then
+  # Only the commands that act on items already there. decide and summary
+  # speak for a session, so only the session itself runs them.
+  case "${1:-}" in
+    defer | undefer | resolve | show) ;;
+    *) die "--pane works only with defer, undefer, resolve and show, not '${1:-}'" ;;
+  esac
+  pointer="$PANES_DIR/${TARGET_PANE}.session_id"
+  sid=""
+  [[ -f "$pointer" ]] && sid=$(<"$pointer")
+  [[ -n "$sid" ]] || die "no session recorded for pane $TARGET_PANE"
+else
+  sid="${CLAUDE_CODE_SESSION_ID:-}"
+  [[ -n "$sid" ]] \
+    || die "CLAUDE_CODE_SESSION_ID not set (not inside a Claude session?) — cannot update status"
+fi
 
 mkdir -p "$STATUS_DIR"
 STATUS_FILE="$STATUS_DIR/${sid}.json"
 LOCK_FILE="$LOCK_DIR/status-${sid}.lock"
+# From outside, there is nothing to act on unless the session has a file;
+# creating one for it would be speaking for it.
+[[ -z "$TARGET_PANE" || -f "$STATUS_FILE" ]] \
+  || die "no istatus state for the session in pane $TARGET_PANE"
 if [[ ! -f "$STATUS_FILE" ]]; then
   # Create-if-absent without a window where the file is empty or a racing
   # writer's seed is lost: write a temp file, then hard-link it into place.
@@ -179,8 +223,10 @@ fi
 # (settings.json changes don't apply mid-session). This pointer has no such
 # dependency: every istatus call already carries TMUX_PANE and sid for free.
 # Single flat file, overwritten atomically; last-writer-wins is fine since
-# only one session occupies a given pane at a time.
-if [[ -n "${TMUX_PANE:-}" ]]; then
+# only one session occupies a given pane at a time. Not with --pane: then
+# TMUX_PANE is the caller's pane (the popup's, the sidebar's), which the
+# target session does not occupy.
+if [[ -z "$TARGET_PANE" && -n "${TMUX_PANE:-}" ]]; then
   mkdir -p "$PANES_DIR"
   pane_tmp=$(mktemp "${PANES_DIR}/.XXXXXX")
   printf '%s' "$sid" > "$pane_tmp"
@@ -300,6 +346,30 @@ _item_kind() {
   jq -r --arg id "$1" '[.items[] | select(.id == $id)][0].kind // ""' "$STATUS_FILE"
 }
 
+# Resolves ref to an open item's id and refuses a blocking one: its state is
+# always unread, and only answering the prompt changes that.
+_notice_id_or_die() {
+  local ref="$1" verb="$2" id
+  id=$(with_lock _find_item_or_die "$ref") || return 1
+  [[ "$(_item_kind "$id")" != "blocking" ]] \
+    || die "item $id is blocking (a pending permission prompt or menu) — it can't be $verb, only resolved by responding to it directly"
+  printf '%s' "$id"
+}
+
+# Marks every unread notice read and prints how many. Writes nothing when
+# there are none, so a no-op leaves the file (and its watchers) alone.
+_defer_all_notices() {
+  local count tmp
+  count=$(jq '[.items[] | select(.kind == "notice" and .state == "unread")] | length' "$STATUS_FILE")
+  if [[ "$count" -gt 0 ]]; then
+    tmp=$(mktemp "${STATUS_FILE}.XXXXXX")
+    jq '.items = [.items[] | if .kind == "notice" then .state = "read" else . end]' \
+      "$STATUS_FILE" > "$tmp" || { rm -f "$tmp"; die "failed to update items"; }
+    mv "$tmp" "$STATUS_FILE"
+  fi
+  printf '%s' "$count"
+}
+
 _set_summary() {
   local tmp
   tmp=$(mktemp "${STATUS_FILE}.XXXXXX")
@@ -330,20 +400,32 @@ cmd_decide() {
 }
 
 cmd_defer() {
+  if [[ "${1:-}" == --all ]]; then
+    [[ $# -eq 1 ]] || die "usage: istatus defer --all (no other arguments)"
+    local count
+    count=$(with_lock _defer_all_notices) || exit 1
+    printf 'istatus: deferred (marked read) %s notice(s)\n' "$count"
+    return
+  fi
   local ref="${1:-}"
-  [[ -n "$ref" ]] || die "usage: istatus defer <id-or-#>"
-  [[ $# -le 1 ]] || die "usage: istatus defer <id-or-#> (one at a time)"
+  [[ -n "$ref" ]] || die "usage: istatus defer <id-or-#> | --all"
+  [[ $# -le 1 ]] || die "usage: istatus defer <id-or-#> (one at a time, or --all)"
 
   local id
-  id=$(with_lock _find_item_or_die "$ref") || exit 1
-
-  local kind
-  kind=$(_item_kind "$id")
-  [[ "$kind" != "blocking" ]] \
-    || die "item $id is blocking (a pending permission prompt or menu) — it can't be deferred, only resolved by responding to it directly"
-
+  id=$(_notice_id_or_die "$ref" deferred) || exit 1
   with_lock _set_item_state "$id" read
   printf 'istatus: deferred (marked read) %s\n' "$id"
+}
+
+cmd_undefer() {
+  local ref="${1:-}"
+  [[ -n "$ref" ]] || die "usage: istatus undefer <id-or-#>"
+  [[ $# -le 1 ]] || die "usage: istatus undefer <id-or-#> (one at a time)"
+
+  local id
+  id=$(_notice_id_or_die "$ref" undeferred) || exit 1
+  with_lock _set_item_state "$id" unread
+  printf 'istatus: undeferred (marked unread) %s\n' "$id"
 }
 
 cmd_resolve() {
@@ -385,16 +467,20 @@ main() {
   case "$subcmd" in
     decide)   cmd_decide "$@" ;;
     defer)    cmd_defer "$@" ;;
+    undefer)  cmd_undefer "$@" ;;
     resolve)  cmd_resolve "$@" ;;
     summary)  cmd_summary "$@" ;;
     show)     cmd_show "$@" ;;
     *)
-      echo "usage: istatus {decide [--priority=high|normal|low]|defer <id-or-#>|resolve <id-or-#>|summary|show}" >&2
+      echo "usage: istatus [--pane <pane>] {decide [--priority=high|normal|low]|defer <id-or-#>|defer --all|undefer <id-or-#>|resolve <id-or-#>|summary|show}" >&2
       echo "  istatus decide [--priority=P] <<'EOF' … EOF   add a notice + flag" >&2
       echo "  istatus defer <id-or-#>                        mark a notice read (not blocking items)" >&2
+      echo "  istatus defer --all                            mark every notice read" >&2
+      echo "  istatus undefer <id-or-#>                      mark a read notice unread again" >&2
       echo "  istatus resolve <id-or-#>                       remove an item" >&2
       echo "  istatus summary <<'EOF' … EOF                  replace the current-work summary" >&2
       echo "  istatus show                                    print current state as JSON" >&2
+      echo "  --pane <pane>   act on the session in <pane> (defer, undefer, resolve, show only)" >&2
       exit 2
       ;;
   esac

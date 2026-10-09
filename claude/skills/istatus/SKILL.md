@@ -21,6 +21,8 @@ All take free text on stdin, never as a CLI argument (same reason as `isend`/`if
 
 `istatus show` prints the current state as JSON (`{summary, items}`) — mainly for the sidebar renderer, but useful to check what you've already said before deciding whether an update is warranted.
 
+`istatus defer <id>` marks a notice read (still listed, no longer flagged) and `istatus undefer <id>` marks it unread again; `defer --all` marks every notice read. These are mostly Adam's, from outside the session: `istatus --pane <pane> {defer|undefer|resolve|show}` acts on whichever session occupies that pane, which is how the popup and the sidebar dismiss a notice without the session's help. `decide` and `summary` refuse `--pane`, since they speak for the session.
+
 ## When to call `decide`
 
 Same trigger as the old `iflag` rule in CLAUDE.md: **you are now waiting on Adam and will do nothing further until he responds.** A plain-text question at the end of a turn doesn't by itself tell Adam you're blocked — he has no way to know unless he happens to be looking at this pane. Call `istatus decide` as part of ending that turn, with the question as a short pointer (the full question still goes in your chat response; the flag just says "come look, and here's the gist").
