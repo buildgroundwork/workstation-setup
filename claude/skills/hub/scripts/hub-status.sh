@@ -204,20 +204,9 @@ render() {
   if [[ -n "$cold_line" ]]; then printf '%s\n' "$cold_line"; fi
 }
 
-# fit_pane <rows> — resize this dashboard's own pane to <rows>, except while
-# the window has a floating pane (the istatus status pane, for one). tmux 3.7c
-# counts a floating pane as part of the tiled split when resizing, so a
-# resize then can leave the tiled panes a row short of the window, and only
-# select-layout -E gets the row back. The dashboard keeps its height until
-# the floating pane closes. Older tmux has no floating panes, and the check
-# finds none.
+# fit_pane <rows> — resize this dashboard's own pane to <rows>.
 fit_pane() {
-  window_has_floating_pane && return 0
   tmux resize-pane -t "$TMUX_PANE" -y "$1" 2>/dev/null || true
-}
-
-window_has_floating_pane() {
-  tmux list-panes -t "$TMUX_PANE" -F '#{pane_floating_flag}' 2>/dev/null | grep -q 1
 }
 
 # --loop[=N]: clear-and-redraw every N seconds until killed. Render to a buffer

@@ -98,8 +98,9 @@ teardown
 # ── fitting the dashboard pane ───────────────────────────────────────────────
 # These run against a real, private tmux server (its own socket, -f /dev/null
 # so no tmux.conf loads): a main pane over a 7-row dashboard pane, as in a
-# hub window. tmux 3.7c loses tiled rows when a pane is resized while the
-# window has a floating pane, which only a real server shows.
+# hub window. Needs tmux 3.8 or later; 3.7 lost tiled rows when a pane was
+# resized while the window had a floating pane, which only a real server
+# shows.
 tmux_setup() {
   setup
   tmux -S "$DIR/sock" -f /dev/null new-session -d -x 120 -y 40 'sleep 300'
@@ -128,10 +129,10 @@ tmux_teardown
 
 # ── with a floating pane open, fitting leaves the layout whole ───────────────
 tmux_setup
-tmux new-pane -d -x 30 -y 1 -X 88 -Y 2 'sleep 300'
+tmux new-pane -d -x 30 -y 3 -X 88 -Y 1 'sleep 300'
 fit 6
-assert_eq "$(tiled_rows):$(tmux display-message -p -t "$DASH" '#{pane_height}')" "40:7" \
-  "fitting holds the dashboard's height while a floating pane is open"
+assert_eq "$(tiled_rows):$(tmux display-message -p -t "$DASH" '#{pane_height}')" "40:6" \
+  "fitting with a floating pane open resizes the dashboard and keeps the layout whole"
 tmux_teardown
 
 echo "$PASS passed, $FAIL failed"
