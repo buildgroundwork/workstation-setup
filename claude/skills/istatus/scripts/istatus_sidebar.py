@@ -39,6 +39,8 @@ from typing import NamedTuple, Optional
 ISTATUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus.sh")
 PRIORITY_RANK = {"high": 0, "low": 2}
 REFRESH_MS = 1000
+# A pane this short is a collapsed floating pane: it shows only the title bar.
+COLLAPSED_ROWS = 2
 HINT = ["j/k move", "r read", "u unread", "e done", "c show done"]
 DONE_HINT = ["j/k move", "u restore", "c show open"]
 BLOCKING_HINT = "blocked: answer it (or prefix A C)"
@@ -152,16 +154,57 @@ class Selection:
         self.select(items, (self.index(items) or 0) + delta)
 
 
+class Memory:
+    """What the sidebar was showing, kept across a restart, since
+    istatus-float.sh replaces the pane to expand or collapse it. One file per
+    paired pane, under the state directory's sidebar/."""
+
+    def __init__(self, root: str, pane: str):
+        self.path = os.path.join(root, "sidebar", f"{pane}.json")
+
+    def load(self) -> dict:
+        try:
+            with open(self.path) as f:
+                state = json.load(f)
+        except (OSError, ValueError):
+            return {}
+        return state if isinstance(state, dict) else {}
+
+    def save(self, state: dict) -> None:
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        tmp = f"{self.path}.{os.getpid()}"
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, self.path)
+
+
 class Sidebar:
 
     def __init__(self, pane: str, root: str):
         self.pane = pane
         self.root = root
+        self.memory = Memory(root, pane)
         self.showing_done = False
         # One selection per view, so switching back lands where you left off.
         self.selections = {False: Selection(), True: Selection()}
         self.message = None
         self.top = 0
+        self.recall()
+
+    def recall(self) -> None:
+        state = self.memory.load()
+        self.showing_done = bool(state.get("done"))
+        selected = state.get("selected") or {}
+        self.selections[False].id = selected.get("open")
+        self.selections[True].id = selected.get("done")
+
+    def remember(self) -> None:
+        try:
+            self.memory.save({"done": self.showing_done,
+                              "selected": {"open": self.selections[False].id,
+                                           "done": self.selections[True].id}})
+        except OSError:
+            pass  # Losing the view on the next restart is not worth a crash.
 
     @property
     def selection(self) -> Selection:
@@ -185,6 +228,7 @@ class Sidebar:
                 continue
             self.message = None
             self.handle(key, view)
+            self.remember()
 
     def handle(self, key: int, view: View) -> None:
         items = self.listed(view)
@@ -204,6 +248,9 @@ class Sidebar:
     def draw(self, screen, view: View) -> None:
         screen.erase()
         height, width = screen.getmaxyx()
+        if height <= COLLAPSED_ROWS:
+            self.draw_collapsed(screen, view, width)
+            return
         lines = self.header(view, width)
         item_lines, selected = self.item_lines(self.listed(view), width)
         # The footer wraps rather than truncates: a sidebar is narrow.
@@ -220,6 +267,16 @@ class Sidebar:
             screen.addnstr(y, 0, text, width, attr)
         for y, text in enumerate(footer, start=height - len(footer)):
             screen.addnstr(y, 0, text, width - 1, footer_attr)
+        screen.refresh()
+
+    def draw_collapsed(self, screen, view: View, width: int) -> None:
+        """Only the title bar and its counts, for a collapsed floating pane.
+        Its last cell is inserted rather than written: writing the bottom-right
+        cell makes curses raise."""
+        bar = title_bar(self.pane, view.items, width)
+        attr = curses.color_pair(3) | curses.A_BOLD
+        screen.addnstr(0, 0, bar, width - 1, attr)
+        screen.insstr(0, width - 1, bar[width - 1:width], attr)
         screen.refresh()
 
     def header(self, view: View, width: int) -> list:
