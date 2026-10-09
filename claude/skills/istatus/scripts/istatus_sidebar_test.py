@@ -136,6 +136,23 @@ class PackTest(unittest.TestCase):
                          ["j/k move  r read", "u unread"])
 
 
+class TitleBarTest(unittest.TestCase):
+    """The header bar: the pane on the left, what is waiting on the right,
+    padded to the full width so its background spans the pane."""
+
+    def test_it_counts_blocking_and_unread_items_on_the_right(self):
+        items = [blocking("b1"), notice("n1"), notice("n2"), notice("n3", state="read")]
+        self.assertEqual(sidebar.title_bar("%9", items, 30),
+                         " istatus %9   1 blocked 2 new ")
+
+    def test_with_nothing_waiting_the_right_side_is_empty(self):
+        self.assertEqual(sidebar.title_bar("%9", [notice("n1", state="read")], 20),
+                         " istatus %9".ljust(20))
+
+    def test_when_too_narrow_for_both_the_count_wins(self):
+        self.assertEqual(sidebar.title_bar("%9", [notice("n1")], 12), "      1 new ")
+
+
 class LoadTest(unittest.TestCase):
 
     def setUp(self):

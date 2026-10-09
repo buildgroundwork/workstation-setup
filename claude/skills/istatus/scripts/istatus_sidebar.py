@@ -156,6 +156,7 @@ class Sidebar:
         curses.use_default_colors()
         curses.init_pair(1, curses.COLOR_RED, -1)
         curses.init_pair(2, curses.COLOR_MAGENTA, -1)
+        curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLUE)
         screen.timeout(REFRESH_MS)
         while True:
             view = load(self.root, self.pane)
@@ -188,14 +189,17 @@ class Sidebar:
         body = height - len(lines) - len(footer)
         self.scroll(selected, body)
         lines += item_lines[self.top:self.top + max(body, 0)]
+        # The full width is safe above the footer; only the bottom-right cell
+        # cannot be written without curses raising.
         for y, (text, attr) in enumerate(lines[:height - len(footer)]):
-            screen.addnstr(y, 0, text, width - 1, attr)
+            screen.addnstr(y, 0, text, width, attr)
         for y, text in enumerate(footer, start=height - len(footer)):
             screen.addnstr(y, 0, text, width - 1, footer_attr)
         screen.refresh()
 
     def header(self, view: View, width: int) -> list:
-        lines = [(f" istatus — {self.pane}", curses.A_BOLD), ("─" * (width - 1), 0)]
+        bar = title_bar(self.pane, view.items, width)
+        lines = [(bar, curses.color_pair(3) | curses.A_BOLD), ("", 0)]
         if view.problem:
             return lines + [(f" ({view.problem})", curses.A_DIM)]
         if view.summary:
@@ -232,6 +236,19 @@ class Sidebar:
             self.top = start
         elif end > self.top + body:
             self.top = max(start, end - body) if end - start <= body else start
+
+
+def title_bar(pane: str, items: list, width: int) -> str:
+    """The pane on the left and what is waiting on the right, padded to the
+    full width so the bar's background spans the pane. When both do not fit,
+    the count wins: it is the part that changes."""
+    blocked = sum(1 for i in items if i.get("kind") == "blocking")
+    new = sum(1 for i in items if i.get("kind") != "blocking" and i.get("state") != "read")
+    counts = [f"{blocked} blocked"] * bool(blocked) + [f"{new} new"] * bool(new)
+    left, right = f" istatus {pane}", " ".join(counts) + " " * bool(counts)
+    if len(left) + len(right) > width:
+        left = ""
+    return left + right.rjust(width - len(left))
 
 
 def tag_for(item: dict):
