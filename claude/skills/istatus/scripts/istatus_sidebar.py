@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """istatus sidebar: the live, interactive view of one pane's istatus state.
 
-Runs in its own tmux split, paired with one Claude pane (istatus-attach.sh
-starts it through istatus-sidebar.sh). It lists the session's summary and its
+Runs in its own tmux pane, paired with one Claude pane: usually a floating
+pane that istatus-float.sh opens, or a tiled split from istatus-attach.sh,
+both through istatus-sidebar.sh. A pane two rows tall or less is a collapsed
+floating pane and shows only the title bar. It lists the session's summary and its
 items in the same order as istatus resolve's [N] ordinals, and acts on the
 selected item through `istatus --pane`, the way Gmail acts on a message:
 
