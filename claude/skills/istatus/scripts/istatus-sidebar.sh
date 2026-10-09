@@ -6,8 +6,8 @@
 # Intended to run in its own tmux split, paired with one Claude pane. Usage:
 #   istatus-sidebar.sh <paired-tmux-pane-id>   (e.g. %83)
 #
-# This name is the entry point because istatus-attach.sh and
-# istatus-toggle.sh find a window's sidebar by it in #{pane_start_command}.
+# This name is the entry point because istatus-attach.sh finds a window's
+# sidebar by it in #{pane_start_command}.
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 exec python3 "$SCRIPT_DIR/istatus_sidebar.py" "$@"
