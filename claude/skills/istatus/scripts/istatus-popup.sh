@@ -6,6 +6,10 @@
 #   istatus-popup.sh rows
 #     Prints one tab-separated line per live session with something to act on
 #     or watch: label, session:window, reason, summary, pane.
+#   istatus-popup.sh dismiss <pane>
+#     Marks every notice of the session in <pane> read, which is what the
+#     popup's dismiss key runs on a row. A blocking item stays; only answering
+#     the prompt clears it.
 #   istatus-popup.sh
 #     Shows those rows in fzf inside a tmux popup.
 
@@ -13,6 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INBOX="$SCRIPT_DIR/istatus-inbox.sh"
+ISTATUS="$SCRIPT_DIR/istatus.sh"
 
 cmd_rows() {
   "$INBOX" list | jq -r '
@@ -30,6 +35,11 @@ cmd_rows() {
         (.summary | one_line),
         .pane ]
     | @tsv'
+}
+
+cmd_dismiss() {
+  local pane="${1:?usage: istatus-popup.sh dismiss <pane>}"
+  "$ISTATUS" --pane "$pane" defer --all
 }
 
 # Pick a session in fzf, inside a tmux popup, and jump to it. Tested with a
@@ -67,17 +77,22 @@ cmd_popup() {
 pick_and_jump() {
   local input="$1" output="$2" selected pane
 
+  # ctrl-x dismisses the row's notices and reloads the list in place, so a
+  # flag the session itself will never resolve can be cleared without
+  # leaving the popup. A ctrl key, since plain letters go to fzf's query.
   tmux display-popup -E -w 80% -h 60% -T " Claude sessions " \
-    -e "ISTATUS_INPUT=$input" -e "ISTATUS_OUTPUT=$output" -- \
+    -e "ISTATUS_INPUT=$input" -e "ISTATUS_OUTPUT=$output" \
+    -e "ISTATUS_POPUP=$SCRIPT_DIR/istatus-popup.sh" -- \
     bash -c '
       fzf \
         --no-sort \
         --reverse \
-        --header "enter: jump   esc: close" \
+        --header "enter: jump   ctrl-x: dismiss notices   esc: close" \
         --delimiter "\t" \
         --with-nth "1,2,3,4" \
         --preview-window down:3 \
         --preview "echo State:   {1}; echo Reason:  {3}; echo Summary: {4}" \
+        --bind "ctrl-x:execute-silent(\"\$ISTATUS_POPUP\" dismiss {5} 2>/dev/null)+reload(\"\$ISTATUS_POPUP\" rows)" \
         < "$ISTATUS_INPUT" > "$ISTATUS_OUTPUT"
     ' 2>/dev/null || true
 
@@ -101,7 +116,8 @@ pick_and_jump() {
 }
 
 case "${1:-}" in
-  rows) cmd_rows ;;
-  "")   cmd_popup ;;
-  *)    echo "usage: istatus-popup.sh [rows]" >&2; exit 1 ;;
+  rows)    cmd_rows ;;
+  dismiss) shift; cmd_dismiss "$@" ;;
+  "")      cmd_popup ;;
+  *)       echo "usage: istatus-popup.sh [rows | dismiss <pane>]" >&2; exit 1 ;;
 esac

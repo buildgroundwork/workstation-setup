@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for istatus-popup.sh rows — the list the tmux popup shows. One row per
 # live session that has something to act on or watch, most urgent first, as
-# tab-separated columns: label, session:window, reason, summary, pane.
+# tab-separated columns: label, session:window, reason, summary, pane. Also
+# `dismiss`, which the popup's dismiss key runs on a row.
 # Plain bash, no framework, no deps beyond jq, a scratch state dir per case.
 #
 # `rows` calls the real inbox, so the cases seed status files and pane
@@ -151,6 +152,38 @@ live_session sess-1 %42 "" "[$(notice n1 "odd source" unread 2026-10-06T00:00:00
 export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
 assert_eq "$(rows)" "wants you${TAB}proj:3${TAB}odd source${TAB}${TAB}%42" \
   "a flagged row still shows when its item's source is not a string"
+teardown
+
+# dismiss <pane> -> runs `istatus-popup.sh dismiss`, as the popup's dismiss key
+# does, from outside any Claude session.
+dismiss() { env -u CLAUDE_CODE_SESSION_ID "$SCRIPT" dismiss "$1" >/dev/null 2>&1 </dev/null; }
+
+# ── dismissing a flagged row marks its notices read ──────────────────────────
+setup
+live_session sess-1 %42 "" "[$(notice n1 "pick a name" unread 2026-10-06T00:00:01Z), $(notice n2 "pick a color" unread 2026-10-06T00:00:02Z)]"
+dismiss %42
+assert_eq "$(jq -c '[.items[].state]' "$DIR/status/sess-1.json")" '["read","read"]' \
+  "dismissing a row marks every notice of its session read"
+teardown
+
+# ── a dismissed flagged row leaves the list ──────────────────────────────────
+setup
+live_session sess-1 %42 "" "[$(notice n1 "pick a name" unread 2026-10-06T00:00:00Z)]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+dismiss %42
+assert_eq "$(rows)" "" \
+  "a flagged row is gone once dismissed"
+teardown
+
+# ── dismissing a blocked row leaves the prompt ───────────────────────────────
+setup
+live_session sess-1 %42 "" "[$(blocking "needs approval"), $(notice n1 "pick a name" unread 2026-10-06T00:00:00Z)]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+dismiss %42
+# With the notice's state, so this cannot pass by the dismiss not running.
+assert_eq "$(rows | cut -f1,3):$(jq -r '.items[] | select(.id == "n1") | .state' "$DIR/status/sess-1.json")" \
+  "needs you${TAB}needs approval:read" \
+  "a dismiss reads a blocked row's notices and leaves the row, since only answering the prompt clears it"
 teardown
 
 # ── the popup jumps and exits cleanly ────────────────────────────────────────
