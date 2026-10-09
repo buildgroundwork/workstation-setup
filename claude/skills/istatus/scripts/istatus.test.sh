@@ -184,6 +184,54 @@ assert_eq "$(refusal "no istatus state" --pane %9 defer --all):$([[ -e "$DIR/sta
   "--pane fails, and creates nothing, for a session with no status file"
 teardown
 
+# ── resolving a notice keeps it in the done list ─────────────────────────────
+setup
+seed sess-2 "$SEED_MIXED"
+point %9 sess-2
+outside --pane %9 resolve n1 >/dev/null
+assert_eq "$(state_of sess-2 '{items: [.items[].id], done: [.done[] | {id, resolved: has("resolved_at")}]}')" \
+  '{"items":["n2","b1"],"done":[{"id":"n1","resolved":true}]}' \
+  "a resolved notice moves to done, stamped with when"
+teardown
+
+# ── resolving a blocking item does not keep it ───────────────────────────────
+setup
+seed sess-2 "$SEED_MIXED"
+point %9 sess-2
+outside --pane %9 resolve b1 >/dev/null
+assert_eq "$(state_of sess-2 '{items: [.items[].id], done: (.done // [])}')" \
+  '{"items":["n1","n2"],"done":[]}' \
+  "a force-cleared blocking item is gone, not done"
+teardown
+
+# ── the done list keeps the last 20 ──────────────────────────────────────────
+setup
+seed sess-2 "$(jq -c '.done = [range(20) | {id: "old\(.)", kind: "notice", text: "old", state: "read", priority: "normal", created_at: "2026-01-01T00:00:00Z", resolved_at: "2026-01-01T00:00:00Z"}]' <<<"$SEED_MIXED")"
+point %9 sess-2
+outside --pane %9 resolve n1 >/dev/null
+assert_eq "$(state_of sess-2 '[(.done | length), .done[0].id, .done[-1].id]')" \
+  '[20,"old1","n1"]' \
+  "resolving past 20 done drops the oldest"
+teardown
+
+# ── restore brings a done notice back, unread ────────────────────────────────
+setup
+seed sess-2 '{"summary":"s","items":[],"done":[{"id":"n1","kind":"notice","text":"first","state":"read","priority":"normal","created_at":"2026-01-01T00:00:01Z","resolved_at":"2026-01-01T00:00:05Z"}]}'
+point %9 sess-2
+outside --pane %9 restore n1 >/dev/null
+assert_eq "$(state_of sess-2 '{items: [.items[] | {id, state, resolved: has("resolved_at")}], done}')" \
+  '{"items":[{"id":"n1","state":"unread","resolved":false}],"done":[]}' \
+  "restore moves a done notice back to the open items, unread"
+teardown
+
+# ── restore refuses an id that is not done ───────────────────────────────────
+setup
+seed sess-2 "$SEED_MIXED"
+point %9 sess-2
+assert_eq "$(refusal "no done item" --pane %9 restore n1)" "refused" \
+  "restore refuses an item that is still open"
+teardown
+
 # ── --pane only runs the commands that act on existing items ─────────────────
 setup
 seed sess-2 "$SEED_MIXED"

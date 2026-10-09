@@ -146,6 +146,17 @@ assert_eq "$(rows)" "" \
   "a session with nothing actionable is not a row"
 teardown
 
+# ── done notices do not make a row ───────────────────────────────────────────
+# The done list is for the sidebar only; nothing derives attention from it.
+setup
+live_session sess-1 %42 "" "[]"
+jq -c --argjson n "$(notice n1 "finished" unread 2026-10-06T00:00:00Z)" '.done = [$n]' \
+  "$DIR/status/sess-1.json" > "$DIR/t" && mv "$DIR/t" "$DIR/status/sess-1.json"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+assert_eq "$(rows):$(jq '.done | length' "$DIR/status/sess-1.json")" ":1" \
+  "a session whose only notices are done is not a row"
+teardown
+
 # ── an item with a non-string source does not blank the list ─────────────────
 setup
 live_session sess-1 %42 "" "[$(notice n1 "odd source" unread 2026-10-06T00:00:00Z | jq -c '.source = 5')]"

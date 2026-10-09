@@ -10,9 +10,12 @@ selected item through `istatus --pane`, the way Gmail acts on a message:
   r                  mark a notice read (istatus defer)
   u                  mark a notice unread (istatus undefer)
   e                  resolve a notice (istatus resolve)
+  c                  switch between the open items and the done ones
 
-A blocking item only clears by answering its prompt (or by prefix A C for a
-prompt interrupted with Esc), so the keys explain that instead of acting.
+In the done view, newest first, u brings the selected notice back, unread
+(istatus restore). A blocking item only clears by answering its prompt (or by
+prefix A C for a prompt interrupted with Esc), so the keys explain that
+instead of acting.
 
 The pane's session is re-resolved on every refresh rather than cached: a
 /resume into the paired pane swaps the session while keeping the pane, and a
@@ -36,7 +39,8 @@ from typing import NamedTuple, Optional
 ISTATUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus.sh")
 PRIORITY_RANK = {"high": 0, "low": 2}
 REFRESH_MS = 1000
-HINT = ["j/k move", "r read", "u unread", "e done"]
+HINT = ["j/k move", "r read", "u unread", "e done", "c show done"]
+DONE_HINT = ["j/k move", "u restore", "c show open"]
 BLOCKING_HINT = "blocked: answer it (or prefix A C)"
 TAG_WIDTH = len("blocked")
 
@@ -44,6 +48,7 @@ TAG_WIDTH = len("blocked")
 class View(NamedTuple):
     summary: str = ""
     items: list = []
+    done: list = []
     problem: Optional[str] = None
 
 
@@ -80,7 +85,9 @@ def load(root: str, pane: str) -> View:
         return View(problem="no istatus state for this session yet")
     except (OSError, ValueError):
         return View(problem="could not read this session's istatus state")
-    return View(summary=state.get("summary") or "", items=ordered(state.get("items") or []))
+    return View(summary=state.get("summary") or "",
+                items=ordered(state.get("items") or []),
+                done=list(reversed(state.get("done") or [])))
 
 
 def ordered(items: list) -> list:
@@ -93,11 +100,14 @@ def ordered(items: list) -> list:
     return sorted(items, key=key)
 
 
-def command_for(key: str, item: dict, pane: str, istatus: str):
+def command_for(key: str, item: dict, pane: str, istatus: str, done: bool = False):
     """The istatus command a key runs on an item, as (argv, None), or
     (None, message) when the key cannot act on it, or (None, None) when it has
     nothing to do. Items are named by id, not ordinal, so an item arriving
-    between the keypress and the command cannot shift the target."""
+    between the keypress and the command cannot shift the target. In the done
+    view, only u acts: it brings the item back."""
+    if done:
+        return ([istatus, "--pane", pane, "restore", item["id"]], None) if key == "u" else (None, None)
     if key not in ("r", "u", "e"):
         return None, None
     if item.get("kind") == "blocking":
@@ -147,9 +157,18 @@ class Sidebar:
     def __init__(self, pane: str, root: str):
         self.pane = pane
         self.root = root
-        self.selection = Selection()
+        self.showing_done = False
+        # One selection per view, so switching back lands where you left off.
+        self.selections = {False: Selection(), True: Selection()}
         self.message = None
         self.top = 0
+
+    @property
+    def selection(self) -> Selection:
+        return self.selections[self.showing_done]
+
+    def listed(self, view: View) -> list:
+        return view.done if self.showing_done else view.items
 
     def loop(self, screen) -> None:
         curses.curs_set(0)
@@ -165,15 +184,20 @@ class Sidebar:
             if key == -1 or key == curses.KEY_RESIZE:
                 continue
             self.message = None
-            self.handle(key, view.items)
+            self.handle(key, view)
 
-    def handle(self, key: int, items: list) -> None:
-        if key in (ord("j"), curses.KEY_DOWN):
+    def handle(self, key: int, view: View) -> None:
+        items = self.listed(view)
+        if key == ord("c"):
+            self.showing_done = not self.showing_done
+            self.top = 0
+        elif key in (ord("j"), curses.KEY_DOWN):
             self.selection.move(items, +1)
         elif key in (ord("k"), curses.KEY_UP):
             self.selection.move(items, -1)
         elif 0 <= key < 256 and (i := self.selection.index(items)) is not None:
-            argv, self.message = command_for(chr(key), items[i], self.pane, ISTATUS)
+            argv, self.message = command_for(chr(key), items[i], self.pane, ISTATUS,
+                                             done=self.showing_done)
             if argv:
                 self.message = run(argv, self.root)
 
@@ -181,9 +205,10 @@ class Sidebar:
         screen.erase()
         height, width = screen.getmaxyx()
         lines = self.header(view, width)
-        item_lines, selected = self.item_lines(view.items, width)
+        item_lines, selected = self.item_lines(self.listed(view), width)
         # The footer wraps rather than truncates: a sidebar is narrow.
-        footer = wrap(self.message, width, "") if self.message else pack(HINT, width)
+        hint = DONE_HINT if self.showing_done else HINT
+        footer = wrap(self.message, width, "") if self.message else pack(hint, width)
         footer = footer[:max(height - 1, 1)]
         footer_attr = curses.color_pair(1) if self.message else curses.A_DIM
         body = height - len(lines) - len(footer)
@@ -206,6 +231,10 @@ class Sidebar:
             lines.append(("Working on:", curses.A_BOLD))
             lines += [(line, 0) for line in wrap(view.summary, width, " ")]
             lines.append(("", 0))
+        if self.showing_done:
+            if not view.done:
+                return lines + [("(nothing done yet)", curses.A_DIM)]
+            return lines + [(f"Done ({len(view.done)}):", curses.A_BOLD)]
         if not view.items:
             return lines + [("(nothing open)", curses.A_DIM)]
         return lines + [(f"Open ({len(view.items)}):", curses.A_BOLD)]
@@ -215,9 +244,14 @@ class Sidebar:
         lines, selected = [], None
         chosen = self.selection.index(items)
         for n, item in enumerate(items):
-            tag, attr = tag_for(item)
             start = len(lines)
-            prefix = f"[{n + 1}] {tag:<{TAG_WIDTH}}  "
+            # Done items carry no [N]: istatus's ordinals count open items.
+            if self.showing_done:
+                tag, attr = "done", curses.A_DIM
+                prefix = f"{tag:<{TAG_WIDTH}}  "
+            else:
+                tag, attr = tag_for(item)
+                prefix = f"[{n + 1}] {tag:<{TAG_WIDTH}}  "
             wrapped = wrap(item.get("text") or "", width - len(prefix), "") or [""]
             lines.append((prefix + wrapped[0], attr))
             lines += [(" " * len(prefix) + rest, attr) for rest in wrapped[1:]]

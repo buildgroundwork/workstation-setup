@@ -7,7 +7,7 @@ description: Maintain this session's live status (open decisions Adam needs to m
 
 Adam runs many concurrent Claude sessions across tmux panes. Historically, switching to a session that flagged him meant re-reading transcript to reconstruct *what* it needs and *why* — the flag said "come look," not what to look at. `istatus` fixes that: each session keeps a small, current-only record (open decisions + a work summary) in `~/.claude-tmux-attention/status/<session_id>.json`, and an optional sidebar pane next to this session renders it live, refreshing within a second or two of any change.
 
-**The record is current-relevance-only, not a log.** Old decisions fall off when resolved; the summary is overwritten, not appended. A sidebar showing everything this session has ever asked is worse than no sidebar — it's the same wall of text the sidebar exists to avoid. This is the one discipline rule that matters most: **resolve what you raise.**
+**The record is current-relevance-only, not a log.** Old decisions leave the open list when resolved (the last 20 are kept in a separate done list that only the sidebar shows, and nothing counts toward attention); the summary is overwritten, not appended. A sidebar showing everything this session has ever asked is worse than no sidebar — it's the same wall of text the sidebar exists to avoid. This is the one discipline rule that matters most: **resolve what you raise.**
 
 ## The three commands
 
@@ -49,7 +49,7 @@ Whenever what you're actively doing changes in a way that would surprise someone
 
 `istatus` writes its state regardless of whether a sidebar is actually displayed anywhere — the record is useful on its own (Adam can always `istatus show` by hand), and the sidebar is an optional viewer on top of it. To attach a live sidebar to a pane: `~/.workstation/claude/skills/istatus/scripts/istatus-attach.sh` (run from inside the pane to attach to, or pass a pane id as an argument to attach from elsewhere). This is Adam's call to make, not something a session should do to its own pane unprompted.
 
-The sidebar (`scripts/istatus_sidebar.py`, started through `istatus-sidebar.sh`) is interactive once focused: `j`/`k` select an item, `r` marks a notice read, `u` marks it unread, and `e` resolves it, all through `istatus --pane`. A blocking item ignores those keys, since only answering its prompt clears it. It refreshes once a second, so a sidebar shows a `/resume` into its pane, and changes from the session, without a keypress. It needs `python3`; macOS's own 3.9 is enough.
+The sidebar (`scripts/istatus_sidebar.py`, started through `istatus-sidebar.sh`) is interactive once focused: `j`/`k` select an item, `r` marks a notice read, `u` marks it unread, and `e` resolves it, all through `istatus --pane`. `c` switches to the done list (newest first), where `u` brings a notice back unread (`istatus restore <id>`). A blocking item ignores those keys, since only answering its prompt clears it. It refreshes once a second, so a sidebar shows a `/resume` into its pane, and changes from the session, without a keypress. It needs `python3`; macOS's own 3.9 is enough.
 
 ## What else writes this file: the hooks
 

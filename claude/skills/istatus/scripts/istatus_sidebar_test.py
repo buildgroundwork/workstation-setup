@@ -125,6 +125,21 @@ class CommandForTest(unittest.TestCase):
         self.assertEqual(self.command("x", notice("n1")), (None, None))
 
 
+class CommandForDoneTest(unittest.TestCase):
+    """The keys in the done view, where u brings an item back."""
+
+    def command(self, key, item):
+        return sidebar.command_for(key, item, "%9", "/x/istatus.sh", done=True)
+
+    def test_u_restores_a_done_item(self):
+        self.assertEqual(self.command("u", notice("n1", state="read")),
+                         (["/x/istatus.sh", "--pane", "%9", "restore", "n1"], None))
+
+    def test_r_and_e_do_nothing_to_a_done_item(self):
+        self.assertEqual([self.command(key, notice("n1")) for key in "re"],
+                         [(None, None), (None, None)])
+
+
 class PackTest(unittest.TestCase):
     """The key hint, laid out to the sidebar's width."""
 
@@ -185,6 +200,16 @@ class LoadTest(unittest.TestCase):
         view = sidebar.load(self.root, "%9")
         self.assertEqual((view.summary, [i["id"] for i in view.items]),
                          ("working", ["b1", "n1"]))
+
+    def test_done_items_load_newest_first(self):
+        self.seed("sess-1", {"summary": "", "items": [],
+                             "done": [notice("older"), notice("newer")]})
+        self.assertEqual([i["id"] for i in sidebar.load(self.root, "%9").done],
+                         ["newer", "older"])
+
+    def test_a_file_without_done_items_loads_none(self):
+        self.seed("sess-1", {"summary": "", "items": [notice("n1")]})
+        self.assertEqual(sidebar.load(self.root, "%9").done, [])
 
     def test_a_key_runs_against_the_real_istatus(self):
         self.seed("sess-1", {"summary": "", "items": [notice("n1"), notice("n2")]})

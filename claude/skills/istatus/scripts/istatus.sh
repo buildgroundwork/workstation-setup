@@ -49,7 +49,8 @@
 # State file: ~/.claude-tmux-attention/status/<session_id>.json
 #   { summary: "<current work/thinking, or empty>",
 #     pane: "<tmux pane id>",   (optional; written by some hooks)
-#     items: [ { id, kind, text, state, priority?, source?, created_at }, ... ] }
+#     items: [ { id, kind, text, state, priority?, source?, created_at }, ... ],
+#     done: [ { ...a resolved notice, resolved_at }, ... ] }   (optional)
 #   kind: "blocking" | "notice". state: "unread" | "read" (blocking is
 #   always "unread"). priority (notice only): "high" | "normal" | "low".
 #   source: what raised the item. For a blocking item, the tool_name of the
@@ -57,6 +58,9 @@
 #   which is how a resolution knows what it resolves. For a hub dispatch,
 #   "hub.dispatched" (read, low) or "hub.ready" (unread when finished). A
 #   decide notice has none. Readers must tolerate its absence.
+#   done: the last DONE_LIMIT notices resolved with `istatus resolve`, oldest
+#   first, so the sidebar can show what was finished. Not part of the inbox:
+#   only the sidebar reads it, and nothing derives attention from it.
 #   pane: informational only. istatus.sh never writes it and only some hooks
 #   do, so it is often absent, and readers must not depend on it: where a
 #   session lives, and whether it is still live, come from the pane pointers
@@ -92,7 +96,8 @@
 #     blocking item, which is always unread.
 #
 #   istatus resolve <id-or-#>
-#     Removes the item entirely. For a notice, this is "done, acted on." For
+#     Removes the item from the open list. For a notice, this is "done, acted
+#     on," and the notice moves to the done list. For
 #     a blocking item, this is the manual force-clear escape hatch — it does
 #     NOT answer the underlying prompt, it only stops istatus from tracking
 #     it; use only when a prompt is genuinely stuck/stale. Prints a warning
@@ -102,6 +107,10 @@
 #     usage error if the id/ordinal doesn't resolve — almost always a stale
 #     reference from an earlier turn, worth surfacing rather than silently
 #     no-op'ing.
+#
+#   istatus restore <id>
+#     The reverse of resolving a notice: moves it from the done list back to
+#     the open items, unread. By id only; the done list has no ordinals.
 #
 #   istatus summary <<'EOF'
 #   <one line: what I'm currently doing/thinking>
@@ -116,7 +125,7 @@
 #     before deciding whether an update is needed.
 #
 # Usage (run from OUTSIDE the session, by the popup and the sidebar):
-#   istatus --pane <pane> {defer|undefer|resolve|show} ...
+#   istatus --pane <pane> {defer|undefer|resolve|restore|show} ...
 #     Acts on the session that occupies <pane>, found through
 #     panes/<pane>.session_id, instead of on $CLAUDE_CODE_SESSION_ID. Only the
 #     commands that act on items already there: decide and summary speak for
@@ -129,7 +138,7 @@
 # shell quoting, so metachars in an argument (globs, braces-with-quotes) trip
 # a prompt even with Bash(istatus:*) allowlisted. Only `--pane <pane>`,
 # `decide [--priority=…]`, `defer <id>|--all`, `undefer <id>`, `resolve <id>`,
-# `summary` and `show` appear as args; free text never does.
+# `restore <id>`, `summary` and `show` appear as args; free text never does.
 #
 # Exit: 0 on success (each mutator prints a short confirmation); non-zero with
 # a message on stderr on misuse or a missing dependency — never silent.
@@ -139,6 +148,7 @@ set -euo pipefail
 STATUS_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/status"
 PANES_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}/panes"
 LOCK_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
+DONE_LIMIT=20
 
 die() { printf 'istatus: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'istatus: WARNING: %s\n' "$*" >&2; }
@@ -150,7 +160,7 @@ warn() { printf 'istatus: WARNING: %s\n' "$*" >&2; }
 # source istatus-inbox.sh trusts.
 TARGET_PANE=""
 if [[ "${1:-}" == --pane ]]; then
-  [[ -n "${2:-}" ]] || die "usage: istatus --pane <pane> {defer|undefer|resolve|show} ..."
+  [[ -n "${2:-}" ]] || die "usage: istatus --pane <pane> {defer|undefer|resolve|restore|show} ..."
   TARGET_PANE="$2"
   shift 2
 fi
@@ -159,8 +169,8 @@ if [[ -n "$TARGET_PANE" ]]; then
   # Only the commands that act on items already there. decide and summary
   # speak for a session, so only the session itself runs them.
   case "${1:-}" in
-    defer | undefer | resolve | show) ;;
-    *) die "--pane works only with defer, undefer, resolve and show, not '${1:-}'" ;;
+    defer | undefer | resolve | restore | show) ;;
+    *) die "--pane works only with defer, undefer, resolve, restore and show, not '${1:-}'" ;;
   esac
   pointer="$PANES_DIR/${TARGET_PANE}.session_id"
   sid=""
@@ -334,11 +344,30 @@ _set_item_state() {
   mv "$tmp" "$STATUS_FILE"
 }
 
+# A resolved notice moves to .done, stamped, and only the last DONE_LIMIT are
+# kept, so the sidebar can show what was finished without the file becoming
+# a log. A blocking item is just dropped: resolving one here is a force-clear,
+# not a completion. Nothing but the sidebar reads .done.
 _remove_item() {
   local id="$1" tmp
   tmp=$(mktemp "${STATUS_FILE}.XXXXXX")
-  jq --arg id "$id" '.items = [.items[] | select(.id != $id)]' \
-    "$STATUS_FILE" > "$tmp" || { rm -f "$tmp"; die "failed to resolve item"; }
+  jq --arg id "$id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson limit "$DONE_LIMIT" '
+    [.items[] | select(.id == $id and .kind == "notice") | . + { resolved_at: $ts }] as $done
+    | .items = [.items[] | select(.id != $id)]
+    | if ($done | length) > 0 then .done = ((.done // []) + $done)[-$limit:] else . end
+  ' "$STATUS_FILE" > "$tmp" || { rm -f "$tmp"; die "failed to resolve item"; }
+  mv "$tmp" "$STATUS_FILE"
+}
+
+_restore_item() {
+  local id="$1" tmp
+  jq -e --arg id "$id" '[(.done // [])[] | select(.id == $id)] | length > 0' \
+    "$STATUS_FILE" >/dev/null || die "no done item with id '$id'"
+  tmp=$(mktemp "${STATUS_FILE}.XXXXXX")
+  jq --arg id "$id" '
+    .items += [.done[] | select(.id == $id) | del(.resolved_at) | .state = "unread"]
+    | .done = [.done[] | select(.id != $id)]
+  ' "$STATUS_FILE" > "$tmp" || { rm -f "$tmp"; die "failed to restore item"; }
   mv "$tmp" "$STATUS_FILE"
 }
 
@@ -449,6 +478,13 @@ cmd_resolve() {
   printf 'istatus: resolved %s (%s item(s) remaining)\n' "$id" "$remaining"
 }
 
+cmd_restore() {
+  local id="${1:-}"
+  [[ -n "$id" && $# -eq 1 ]] || die "usage: istatus restore <id>"
+  with_lock _restore_item "$id" || exit 1
+  printf 'istatus: restored %s (marked unread)\n' "$id"
+}
+
 cmd_summary() {
   local text
   text=$(_read_stdin_body summary)
@@ -469,15 +505,17 @@ main() {
     defer)    cmd_defer "$@" ;;
     undefer)  cmd_undefer "$@" ;;
     resolve)  cmd_resolve "$@" ;;
+    restore)  cmd_restore "$@" ;;
     summary)  cmd_summary "$@" ;;
     show)     cmd_show "$@" ;;
     *)
-      echo "usage: istatus [--pane <pane>] {decide [--priority=high|normal|low]|defer <id-or-#>|defer --all|undefer <id-or-#>|resolve <id-or-#>|summary|show}" >&2
+      echo "usage: istatus [--pane <pane>] {decide [--priority=high|normal|low]|defer <id-or-#>|defer --all|undefer <id-or-#>|resolve <id-or-#>|restore <id>|summary|show}" >&2
       echo "  istatus decide [--priority=P] <<'EOF' … EOF   add a notice + flag" >&2
       echo "  istatus defer <id-or-#>                        mark a notice read (not blocking items)" >&2
       echo "  istatus defer --all                            mark every notice read" >&2
       echo "  istatus undefer <id-or-#>                      mark a read notice unread again" >&2
-      echo "  istatus resolve <id-or-#>                       remove an item" >&2
+      echo "  istatus resolve <id-or-#>                       remove an item (a notice is kept in done)" >&2
+      echo "  istatus restore <id>                           bring a done notice back, unread" >&2
       echo "  istatus summary <<'EOF' … EOF                  replace the current-work summary" >&2
       echo "  istatus show                                    print current state as JSON" >&2
       echo "  --pane <pane>   act on the session in <pane> (defer, undefer, resolve, show only)" >&2
