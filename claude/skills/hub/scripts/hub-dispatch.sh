@@ -1,0 +1,240 @@
+#!/bin/bash
+# hub-dispatch.sh — send a prompt into a repo's live claude pane, or navigate
+# to it. Used by the hub skill AFTER it has confirmed the action with Adam.
+#
+# Subcommands:
+#   target <project>
+#       Resolve <project> (a tmuxinator config basename) to its claude window
+#       target "<session>:<window>". Starts the session via tmuxinator if it
+#       isn't running. Prints the target on stdout. Exit 1 if unresolvable.
+#
+#   send <target> <<<"prompt text"
+#       Type the prompt (read from stdin) into <target> and press Enter.
+#       Refuses if the target pane doesn't exist. Does NOT confirm — the
+#       skill is responsible for showing Adam the prompt + target and getting
+#       an OK before calling this.
+#
+#   go <target>
+#       Switch the active tmux client to <target> (navigate / hand off).
+#
+#   capture <target>
+#       Print the visible contents of <target>'s pane (for read-back).
+#
+#   ready
+#       List dispatched panes by state — which have FINISHED (task.ready, the
+#       Stop hook turned their notice into a ready one) vs. still in-flight
+#       (task.dispatched). The read-side payoff of `send` arming the pane. One
+#       line per pane: "<state>\t<session>:<window>\t<prompt>".
+#
+# A "target" is "<session>:<window>"; send/capture operate on that window's
+# active pane. Pure-navigation, capture, and ready are read-ish; only `send`
+# types.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ISTATUS_SCRIPTS="$SCRIPT_DIR/../../istatus/scripts"
+
+err() { printf '%s\n' "$*" >&2; exit 1; }
+
+session_running() {
+  local name="$1"
+  tmux has-session -t "=$name" 2>/dev/null
+}
+
+# basename of a tmuxinator config -> its `name:` display value
+project_display_name() {
+  local project="$1"
+  local cfg="${TMUXINATOR_DIR:-$HOME/.workstation/tmuxinator}/${project}.yml"
+  [[ -f "$cfg" ]] || err "no tmuxinator config: $cfg"
+  local name
+  name=$(sed -n 's/^name:[[:space:]]*//p' "$cfg" | head -1)
+  printf '%s' "${name:-$project}"
+}
+
+cmd_target() {
+  local project="${1:?usage: target <project>}"
+  local name
+  name=$(project_display_name "$project")
+
+  if ! session_running "$name"; then
+    command -v tmuxinator >/dev/null 2>&1 || err "tmuxinator not found; cannot start '$project'"
+    tmuxinator start "$project" >/dev/null 2>&1 || err "failed to start tmuxinator project '$project'"
+    # tmuxinator with attach:false returns promptly, but give the session a
+    # moment to register before we look for its windows.
+    local tries=20
+    while ! session_running "$name"; do
+      tries=$((tries - 1)); [[ $tries -le 0 ]] && err "session '$name' did not come up"
+      sleep 0.25
+    done
+  fi
+
+  # Find the claude window in that session.
+  local cwin
+  cwin=$(tmux list-windows -t "=$name" -F '#{window_index} #{window_name}' 2>/dev/null \
+    | awk '$2=="claude"{print $1; exit}')
+  [[ -n "$cwin" ]] || err "session '$name' has no 'claude' window"
+  printf '%s:%s' "$name" "$cwin"
+}
+
+cmd_send() {
+  local target="${1:?usage: send <target>  (prompt on stdin)}"
+  tmux list-panes -t "$target" >/dev/null 2>&1 || err "target pane not found: $target"
+  local prompt
+  prompt=$(cat)
+  [[ -n "$prompt" ]] || err "empty prompt; nothing to send"
+
+  # Resolve the concrete pane id once — every check below keys on it, and a
+  # window target's active pane could otherwise drift between checks.
+  local pane
+  pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) \
+    || err "could not resolve pane for: $target"
+  [[ -n "$pane" ]] || err "could not resolve pane for: $target"
+
+  # GATE: refuse if the pane is in copy/scroll mode. The user co-uses these
+  # panes; copy-mode means they're actively reading scrollback, and send-keys
+  # into a pane in copy-mode is *swallowed by copy-mode* (the keys are
+  # interpreted as copy-mode commands, not delivered to Claude) — so it both
+  # fails AND disrupts. `#{pane_in_mode}` is a reliable first-class tmux signal
+  # (1 = in any mode). Do NOT force-exit the mode; that would yank the user out
+  # of what they're reading. Refuse, report, exit non-zero — the caller retries
+  # when the pane is free. (Mid-generation is deliberately NOT gated: Claude's
+  # TUI queues typed input until the current turn ends, so a send into a busy-
+  # but-not-in-mode pane is safe; copy-mode is the only real hazard.)
+  if [[ "$(tmux display-message -t "$pane" -p '#{pane_in_mode}' 2>/dev/null)" == "1" ]]; then
+    printf 'pane %s (%s) is in copy/scroll mode — not sending (you are looking at it). Retry when it is at the prompt.\n' \
+      "$pane" "$target" >&2
+    return 3
+  fi
+
+  # DELIVER via bracketed paste (load-buffer + paste-buffer -p), not send-keys
+  # -l. A long multi-line prompt injected as raw keystrokes can interleave with
+  # a TUI redraw and land malformed; a bracketed paste is delivered as one
+  # atomic unit the terminal won't tear. Enter follows as its own key event,
+  # after a settle, so it submits rather than landing inside the paste buffer.
+  local buf="hub-dispatch-$$"
+  printf '%s' "$prompt" | tmux load-buffer -b "$buf" - 2>/dev/null \
+    || err "failed to stage prompt buffer for: $target"
+  tmux paste-buffer -t "$pane" -b "$buf" -p -d 2>/dev/null   # -d deletes the buffer after paste
+  sleep 0.3
+  tmux send-keys -t "$pane" Enter
+
+  # CONFIRM before arming. The send above can still silently fail to land (a
+  # transient mode flip, a dead pane). Arming a pane we didn't actually deliver
+  # to is the bug behind phantom "dispatched" rows and the resend race (operator
+  # can't tell a dropped send from a submitted one, resends, double-dispatches).
+  # So verify the input line is now empty (the prompt submitted) before writing
+  # the task.dispatched row. A non-empty input line after Enter means the prompt
+  # is sitting unsent (e.g. it arrived mid-redraw) — report and DON'T arm.
+  sleep 0.4
+  if _pane_input_pending "$pane"; then
+    printf 'WARNING: prompt may not have submitted on %s (%s) — input line not clear. NOT arming; verify the pane.\n' \
+      "$pane" "$target" >&2
+    return 4
+  fi
+
+  # Mark the dispatched pane as awaiting a result (a hub.dispatched notice), so
+  # the status line and popup show it in flight and the Stop hook can later
+  # turn it into a ready notice. Best-effort: arming must never break a
+  # dispatch, so a failure to record it is silently ignored.
+  _arm_target "$pane" "$prompt" || true
+}
+
+# Heuristic: does the pane's input line still hold unsent text? After a
+# successful submit the Claude TUI input shows an empty prompt (a bare "❯" with
+# nothing after it). If the last non-blank line is a prompt glyph followed by
+# visible text, the prompt didn't submit. Best-effort and conservative: on any
+# uncertainty it returns false (not-pending) so a real send is never reported as
+# failed — the cost of a false "ok" is a stale dispatched row (self-heals when
+# the pane finishes), whereas a false "pending" would spuriously refuse a good
+# send. Returns 0 (true) only when it is fairly sure text is sitting unsent.
+_pane_input_pending() {
+  local pane="$1" lastline
+  lastline=$(tmux capture-pane -t "$pane" -p 2>/dev/null | grep -vE '^\s*$' | tail -1)
+  # A prompt glyph (❯ or >) immediately followed by non-space text == unsent.
+  [[ "$lastline" =~ ^[[:space:]]*[❯\>][[:space:]]+[^[:space:]] ]]
+}
+
+# Arm the pane (a hub.dispatched notice on the session that occupies it). Takes
+# an already-resolved pane id (the caller resolves it once, up front). The
+# prompt goes in on stdin. Returns non-zero (caller ignores) on any failure.
+_arm_target() {
+  local pane="$1" prompt="$2"
+  [[ -n "$pane" ]] || return 1
+  printf '%s' "$prompt" | "$ISTATUS_SCRIPTS/istatus-hook.sh" arm "$pane" >/dev/null 2>&1
+}
+
+# List dispatched panes: those that have FINISHED (task.ready, the Stop hook
+# turned their dispatched notice into a ready one) and those still in flight
+# (task.dispatched), so the hub can report "N ready, M still working". One
+# line per pane: "<state>\t<session>:<window>\t<prompt>", with tabs and
+# newlines in the prompt turned into spaces so a multi-line prompt stays on
+# one line. Reads the istatus inbox, which already leaves out dead panes.
+cmd_ready_list() {
+  # Listed by the hub's own items, not by the session's top state: a dispatch
+  # that hit its own permission prompt is "blocked" and one with a decide open
+  # is "flagged", and either is still a dispatch the hub should count. The text
+  # is the dispatched prompt, not the blocking item's. A ready notice the human
+  # already seen (read) is still listed: focusing the pane marks it read, and
+  # dropping it then would hide a finished result the hub has not read back,
+  # and disagree with hub-wait, which counts a seen ready notice as finished.
+  # It stays listed until `capture` consumes it or the pane is dispatched to
+  # again.
+  "$ISTATUS_SCRIPTS/istatus-inbox.sh" list | jq -r '
+    .[]
+    | . as $row
+    | $row.items[]
+    | (if .source == "hub.ready" then "task.ready"
+       elif .source == "hub.dispatched" then "task.dispatched"
+       else empty end) as $kind
+    | "\($kind)\t\($row.tmux_session):\($row.tmux_window)\t\(.text // "" | tostring | gsub("[\t\n\r]"; " "))"
+  '
+}
+
+cmd_go() {
+  local target="${1:?usage: go <target>}"
+  tmux list-panes -t "$target" >/dev/null 2>&1 || err "target not found: $target"
+  # switch-client works whether or not we're inside the same session.
+  local sess="${target%%:*}"
+  tmux switch-client -t "=$sess" 2>/dev/null || tmux attach -t "=$sess"
+  tmux select-window -t "$target"
+}
+
+cmd_capture() {
+  local target="${1:?usage: capture <target>}"
+  tmux list-panes -t "$target" >/dev/null 2>&1 || err "target not found: $target"
+  tmux capture-pane -t "$target" -p
+  # Reading the pane back is the consume step that closes the dispatch
+  # lifecycle: dispatched -> ready -> (seen) -> read back and cleared. Adam
+  # looking at the pane only marks the ready notice seen (the focus hook and
+  # the popup do that); the hub has not read the result until it captures, and
+  # that is what makes `ready` stop listing it. Only the finished dispatch's
+  # notice goes, never a blocking item or a decide notice. Best-effort; never
+  # fails the capture.
+  _consume_result "$target" || true
+}
+
+# Consume this target's dispatch result. Reading the pane back IS the point
+# at which the hub has the result. istatus-hook.sh consume removes only the
+# pane occupant's hub.ready notices, so the old hand-rolled "don't clobber
+# attention" guard is not needed. Best-effort; never fails the capture.
+_consume_result() {
+  local target="$1" pane
+  pane=$(tmux display-message -t "$target" -p '#{pane_id}' 2>/dev/null) || return 0
+  [[ -n "$pane" ]] || return 0
+  "$ISTATUS_SCRIPTS/istatus-hook.sh" consume "$pane" >/dev/null 2>&1
+}
+
+main() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    target)  cmd_target "$@" ;;
+    send)    cmd_send "$@" ;;
+    go)      cmd_go "$@" ;;
+    capture) cmd_capture "$@" ;;
+    ready)   cmd_ready_list "$@" ;;
+    *) err "usage: $0 {target <project>|send <target>|go <target>|capture <target>|ready}" ;;
+  esac
+}
+
+main "$@"

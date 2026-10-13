@@ -52,6 +52,8 @@ $ ./setup.sh
 - jq
   Command-line JSON processor and pretty-printer.
 - gh
+- flock
+  Used by the Claude session tooling.
 - fzf
   Fast fuzzy find for the command line and vim.
 - git-author
