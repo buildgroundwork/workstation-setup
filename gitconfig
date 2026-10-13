@@ -3,18 +3,25 @@
   pager = less -FXRS -x2
   commitGraph = true
   whitespace = space-before-tab indent-with-non-tab tab-in-indent trailing-space
+  untrackedCache=true
+  fsmonitor=false
 [alias]
   st = status
   di = diff
   co = checkout
-  ci = commit
+  ci = commit --no-verify
+  nvc = ci
+  cnv = ci
+  committ = ci
+  commitnv = ci
+  kommit = ci
   br = branch
   lg = log --graph
   lup = log @{u}... --left-right --graph
   lum = log origin/main... --left-right --graph
   mup = merge @{u}
   rum = rebase origin/main
-  age = !"for branch in `git branch -r | awk '{print $1}'`; do echo `git log -1 $branch --pretty=format:"%at:%%$branch%%%cr%%%cn%n"`;done | column -t -s'%' | sort -nr | cut -d ':' -f 2"
+  age = !"for branch in `git branch -r | awk '{print $1}'`; do echo `git log -1 $branch --pretty=format:"%ct:%%$branch%%%cr%%%cn%n"`;done | column -t -s'%' | sort -nr | cut -d ':' -f 2"
   rollback = !"git diff origin/main.. --name-only -- db/migrate | sed 's/db\\/migrate\\///g' | sort -r | xargs -I% rake db:migrate:down VERSION=%"
   w = whatchanged
   lall = log --branches --tags --remotes --graph
@@ -34,7 +41,7 @@
 [branch]
   autosetupmerge = true
 [push]
-  default = tracking
+  default = simple
 [rebase]
   autosquash = true
 [format]
@@ -46,8 +53,16 @@
 [remote "origin"]
   prune = true
 [include]
-  path = /Users/dev/.git-together
+  path = ~/.git-together
+[include]
+  # Machine-local settings (commit signing, author template). Not committed —
+  # signing key path is per-machine; set up by hand on each machine.
+  path = ~/.gitconfig.local
 [pull]
   ff = only
 [checkout]
   defaultRemote = origin
+[user]
+  name = Adam Milligan
+[credential]
+	helper = osxkeychain

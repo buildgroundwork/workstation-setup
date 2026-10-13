@@ -102,6 +102,9 @@ git config --global commit.template ~/.git-author-template
 git config --global user.name "$GIT_USER_NAME"
 git config --global user.email $GIT_USER_EMAIL
 
+# GitHub credentials (the copied gitconfig has no credential helper)
+gh auth status &>/dev/null && gh auth setup-git
+
 # ccmenu
 # defaults import net.sourceforge.cruisecontrol.CCMenu ccmenu.plist
 
