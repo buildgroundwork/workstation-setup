@@ -29,11 +29,10 @@ fi
 # scripts
 ln -sf $DIR/update.sh $HOMEBREW_DIR/bin/workstation-update
 
-# ruby
-rbenv install --skip-existing 3.3.6
-rbenv install --skip-existing 3.4.1
-rbenv global 3.4.1
-eval "$(rbenv init -)"
+# ruby and node, via mise. default-gems is read by mise's ruby installs.
+ln -sf $DIR/default-gems ~/.default-gems
+mise use --global ruby@3.4 node@lts
+eval "$(mise activate bash --shims)"
 gem install bundler
 
 # vim
@@ -90,7 +89,6 @@ mkdir -p ~/.config/bat
 ln -sf $DIR/batconfig ~/.config/bat/config
 ln -sf $DIR/authorized_keys ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
-ln -sf $DIR/default-gems $(rbenv root)/default-gems
 ln -sf $DIR/tmuxinator ~/.config
 
 # iTerm2 profile preferences

@@ -95,7 +95,6 @@ plugins=(
     git
     macos
     rake
-    rbenv
     ruby
     yarn
     zsh-syntax-highlighting
@@ -129,8 +128,6 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
-eval "$(rbenv init -)"
-
 export EDITOR='vim'
 export BUNDLER_EDITOR='vim'
 
@@ -149,6 +146,6 @@ unset -v GEM_HOME
 
 alias ibrew='arch -x86_64 /usr/local/bin/brew'
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "/usr/local/opt/nvm/nvm.sh" ] && \. "/usr/local/opt/nvm/nvm.sh"  # This loads nvm
-[ -s "/usr/local/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/usr/local/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash completion
+# mise activation must come LAST so its shims win PATH precedence (PATH
+# prepends above would otherwise shadow mise's per-directory ruby/node).
+eval "$(mise activate zsh)"

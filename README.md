@@ -35,7 +35,6 @@ $ ./setup.sh
 
 ## What's included?
 ### Via homebrew
-- eslint
 - pure-prompt
   Command line prettification for zsh.
 - Inconsolata-g font
@@ -45,8 +44,8 @@ $ ./setup.sh
 - PostgreSQL
 - ripgrep
   Fast text search replacement for ack and ag.
-- rbenv
-- node
+- mise
+  Ruby and Node version management.
 - yarn
 - git
 - wget
@@ -57,9 +56,9 @@ $ ./setup.sh
 - git-author
 - git-together
 
-### Via rbenv
-- ruby 2.7.3
-- ruby 3.0.2
+### Via mise
+- ruby 3.4
+- node (LTS)
 - bundler (gem install)
 
 ### Directly downloaded
