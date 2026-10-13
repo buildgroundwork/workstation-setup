@@ -29,6 +29,13 @@ $ ./setup.sh
 ### Set up tmuxinator
 - Copy the example configuration from the tmuxinator directory
 - Modify for each project
+- Add a `tmuxinator start <project>` line for each project to `tmuxinator/mux`
+- Run `mux` to start every session and attach
+
+The `workstation` session is always started. Each project's `claude` window
+reports its status through the istatus skill (`Ctrl-b A A` for the popup,
+`Ctrl-b A S` for the floating status pane; see `tmux.conf`). This needs tmux
+3.8 or later.
 
 ### Set up authorized keys
 - Add keys for machines you would like SSH access into to the `authorized_keys` file.
@@ -52,8 +59,8 @@ $ ./setup.sh
 - jq
   Command-line JSON processor and pretty-printer.
 - gh
-- flock
-  Used by the Claude session tooling.
+- flock, coreutils
+  Used by the Claude session tooling and `mux`.
 - fzf
   Fast fuzzy find for the command line and vim.
 - git-author

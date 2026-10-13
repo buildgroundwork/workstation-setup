@@ -1,0 +1,35 @@
+#!/bin/bash
+set -e
+
+# Pre-warm the Claude plugin cache before launching the session herd.
+#
+# Claude Code resolves/materializes marketplace plugins asynchronously at
+# startup, and a startup gate registers plugin hooks BEFORE that async resolve
+# finishes — so on a cold boot, sessions can come up with plugin hooks missing
+# (e.g. a plugin's Notification/Stop hooks never register, and whatever they
+# were meant to do silently doesn't happen). Upstream bug:
+# github.com/anthropics/claude-code/issues/63028 (no startup wait-for-plugins
+# flag exists). Launching ~12 sessions at once against a cold cache makes the
+# race reliably lose.
+#
+# One throwaway headless session first materializes + caches the plugins so the
+# real sessions launch against a hot cache and win the registration race.
+# Blocking (so the cache is warm before the herd) but timeout-guarded and
+# non-fatal (set -e is suspended) so a hiccup never blocks boot.
+echo "Pre-warming Claude plugin cache..."
+# timeout is GNU coreutils; Homebrew installs it as gtimeout.
+TIMEOUT=$(command -v timeout || command -v gtimeout || true)
+( set +e; "$TIMEOUT" 90 claude -p 'reply: ok' --allowed-tools '' >/dev/null 2>&1 ) || true
+
+# Sweep stale inter-session client registrations left by a prior unclean
+# shutdown (crash / SIGKILL bypasses the graceful atexit cleanup, so orphaned
+# clients/<pid>.session files survive pointing at dead pids). MUST run here —
+# before the herd launches — because once the new instances connect and
+# register, their fresh entries can't be told apart from the orphans. NOT
+# guarded: if the sweep fails, set -e halts the boot on purpose — better to fix
+# the sweep and start clean than to boot into a known-messy bus state.
+echo "Sweeping stale inter-session clients..."
+~/.claude/skills/hub/scripts/isweep.sh
+
+tmuxinator start workstation
+tmux attach
