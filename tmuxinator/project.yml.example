@@ -1,16 +1,28 @@
-name: <project-name>
+# Copy to tmuxinator/<project-name>.yml and add a matching
+# `tmuxinator start <project-name>` line to tmuxinator/mux.
+name: <Project Name>
 root: ~/projects/<project-name>
 
 tmux_options: -2
 
 attach: false
 
+# The usual window set. Keep the claude window: the hub skill finds a session's
+# Claude pane by a window name containing "claude".
 windows:
   - vim: vim
-  - server: bundle exec rails s
-  - db: bundle exec rails db
-  - console: bundle exec rails c
+  # A long-running command for a window, e.g. bundle exec rails s or bin/dev
+  - server:
+  - db:
+  - console:
   - shell:
-  - sidekiq: bundle exec sidekiq
-  - webpack: bin/webpack-dev-server
-
+  - shell2:
+  # INTER_SESSION_NAME gives the session a stable name on the inter-session
+  # bus, so other sessions can message it by name.
+  - claude: INTER_SESSION_NAME=<project-name> claude --continue
+  # A window can hold several panes, e.g. a frontend and an API server:
+  # - servers:
+  #     layout: even-horizontal
+  #     panes:
+  #       - bin/dev
+  #       - cd ~/projects/<api-project> && bin/dev
