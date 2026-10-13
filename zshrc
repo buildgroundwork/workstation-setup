@@ -145,6 +145,7 @@ unset -v GEM_HOME
 
 
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 # mise activation must come LAST so its shims win PATH precedence (PATH
 # prepends above would otherwise shadow mise's per-directory ruby/node).

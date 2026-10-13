@@ -1,0 +1,204 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(awk *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
+      "Bash(jq *)",
+      "Bash(mkdir *)",
+      "Bash(pbcopy *)",
+      "Bash(rm -f /private/tmp/*)",
+      "Bash(rm -rf /private/tmp/*)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git remote -v)",
+      "Bash(git remote show *)",
+      "Bash(git ls-files *)",
+      "Bash(git rev-parse *)",
+      "Bash(git config --get *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr list *)",
+      "Bash(ruby -c *)",
+      "Bash(bundle exec rspec *)",
+      "Bash(bin/rspec *)",
+      "Bash(bin/rubocop *)",
+      "Bash(bin/srb *)",
+      "Bash(cargo build *)",
+      "Bash(cargo test *)",
+      "Bash(cargo check *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo fmt *)",
+      "Bash(bats *)",
+      "Bash(tmux *)",
+      "Bash(brew info *)",
+      "Bash(brew list *)",
+      "Bash(brew tap)",
+      "Bash(brew --prefix*)",
+      "Bash(brew --version)",
+      "Bash(mise ls *)",
+      "Bash(mise ls-remote *)",
+      "Bash(bash ~/.claude/skills/hub/scripts/*)",
+      "Bash(~/.claude/skills/hub/scripts/*)",
+      "Bash(isend:*)",
+      "Bash(iflag:*)",
+      "Bash(ilist:*)",
+      "Bash(istatus:*)",
+      "Read(~/.claude/data/inter-session/**)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Edit(//tmp/**)",
+      "Edit(//private/tmp/**)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:github.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:datatracker.ietf.org)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:developer.mozilla.org)",
+      "WebFetch(domain:research.google)",
+      "WebFetch(domain:martinfowler.com)",
+      "WebFetch(domain:cncf.io)"
+    ],
+    "ask": [
+      "Bash(rm *)"
+    ]
+  },
+  "model": "opus[1m]",
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh add"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/block-shell-viewers.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh add"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh remove"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh remove"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh remove"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh remove"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh remove"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh stop"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "claude-powerline --style=powerline"
+  },
+  "enabledPlugins": {
+    "Notion@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "figma@claude-plugins-official": true,
+    "ruby-lsp@claude-plugins-official": true,
+    "inter-session@inter-session": true
+  },
+  "extraKnownMarketplaces": {
+    "inter-session": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/yilunzhang/claude-code-inter-session.git"
+      }
+    }
+  },
+  "alwaysThinkingEnabled": false,
+  "effortLevel": "high",
+  "autoUpdatesChannel": "stable",
+  "tui": "default",
+  "skipWorkflowUsageWarning": true,
+  "theme": "light-daltonized",
+  "editorMode": "vim"
+}

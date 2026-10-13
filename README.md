@@ -63,6 +63,12 @@ $ ./setup.sh
 - ruby 3.4
 - node (LTS)
 - bundler (gem install)
+- claude-powerline (npm install)
+
+### Claude Code
+- `claude/CLAUDE.md`, `claude/settings.json`, `claude/skills` and
+  `claude/hooks` are linked into `~/.claude`
+- the inter-session plugin, used by the hub and istatus skills
 
 ### Directly downloaded
 - oh-my-zsh

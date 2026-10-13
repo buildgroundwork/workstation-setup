@@ -35,6 +35,10 @@ mise use --global ruby@3.4 node@lts
 eval "$(mise activate bash --shims)"
 gem install bundler
 
+# Claude Code status line (installed rather than run through npx, which
+# starts a fresh node process on every status line render)
+npm install --global @owloops/claude-powerline
+
 # vim
 if [ ! -d ~/.vim ]; then
     git clone https://github.com/buildgroundwork/vim-config.git ~/.vim
@@ -84,6 +88,21 @@ cp -f $DIR/gitconfig ~/.gitconfig
 ln -sf $DIR/.git-together ~/.git-together
 ln -sf $DIR/.gitignore_global ~/.gitignore_global
 ln -sf $DIR/vimrc.local ~/.vimrc.local
+mkdir -p ~/.claude
+ln -sf $DIR/claude/CLAUDE.md ~/.claude/CLAUDE.md
+# Personal skills are repo-managed; -n replaces the existing symlink on
+# re-runs instead of nesting a link inside it.
+ln -sfn $DIR/claude/skills ~/.claude/skills
+# Personal hooks (e.g. the sed/cat/head/tail-viewer block), same pattern as skills.
+ln -sfn $DIR/claude/hooks ~/.claude/hooks
+# settings.json is shared config; the secret-bearing env stays in the
+# untracked settings.local.json alongside it.
+ln -sf $DIR/claude/settings.json ~/.claude/settings.json
+# Commands the skills tell every session to run (istatus decide, isend, ...)
+mkdir -p ~/.local/bin
+for f in $DIR/claude/skills/istatus/scripts/istatus.sh $DIR/claude/skills/hub/scripts/{isend,iflag,ilist}.sh; do
+  ln -sf "$f" ~/.local/bin/$(basename "$f" .sh)
+done
 ln -sf ~/.rails/railsrc ~/.railsrc
 mkdir -p ~/.config/bat
 ln -sf $DIR/batconfig ~/.config/bat/config
@@ -106,6 +125,11 @@ git config --global user.email $GIT_USER_EMAIL
 
 # GitHub credentials (the copied gitconfig has no credential helper)
 gh auth status &>/dev/null && gh auth setup-git
+
+# Claude Code plugins that the tmux setup depends on (istatus and hub use
+# the inter-session message bus)
+claude plugin marketplace add https://github.com/yilunzhang/claude-code-inter-session.git
+claude plugin install inter-session@inter-session
 
 # ccmenu
 # defaults import net.sourceforge.cruisecontrol.CCMenu ccmenu.plist
