@@ -91,8 +91,10 @@ ln -sf $DIR/authorized_keys ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ln -sf $DIR/tmuxinator ~/.config
 
-# iTerm2 profile preferences
-defaults import -app iTerm iterm-profile.plist
+# iTerm2 preferences
+for f in $DIR/iterm/*.sh; do
+  [ -x "$f" ] && "$f"
+done
 
 # git-together
 touch ~/.git-author-template

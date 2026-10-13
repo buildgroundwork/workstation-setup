@@ -79,7 +79,7 @@ $ ./setup.sh
 
 To update iTerm preferences:
 ```sh
-$ defaults export -app iTerm - > iterm-profile.plist
+$ defaults export -app iTerm - > iterm/profile.plist
 ```
 
 To update CCMenu preferences:
