@@ -52,7 +52,6 @@ $ ./setup.sh
 - wget
 - jq
   Command-line JSON processor and pretty-printer.
-- heroku
 - fzf
   Fast fuzzy find for the command line and vim.
 - git-author
