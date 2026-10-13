@@ -28,6 +28,7 @@ fi
 
 # scripts
 ln -sf $DIR/update.sh $HOMEBREW_DIR/bin/workstation-update
+ln -sf $DIR/tmuxinator/mux $HOMEBREW_DIR/bin/mux
 
 # ruby and node, via mise. default-gems is read by mise's ruby installs.
 ln -sf $DIR/default-gems ~/.default-gems
