@@ -131,6 +131,19 @@ gh auth status &>/dev/null && gh auth setup-git
 # the inter-session message bus)
 claude plugin marketplace add https://github.com/yilunzhang/claude-code-inter-session.git
 claude plugin install inter-session@inter-session
+claude plugin update inter-session@inter-session
+INTER_SESSION_DIR=$(jq -r '.plugins["inter-session@inter-session"][0].installPath' ~/.claude/plugins/installed_plugins.json)
+# Its scripts re-exec into this venv for their Python deps. Rebuild it when its
+# interpreter no longer runs, e.g. after a Homebrew Python upgrade. macOS's own
+# python3 is too old for the plugin, so build it from Homebrew's.
+INTER_SESSION_VENV=~/.claude/data/inter-session/venv
+"$INTER_SESSION_VENV/bin/python" -c '' 2>/dev/null || rm -rf "$INTER_SESSION_VENV"
+[ -d "$INTER_SESSION_VENV" ] || $HOMEBREW_DIR/bin/python3 -m venv "$INTER_SESSION_VENV"
+"$INTER_SESSION_VENV/bin/pip" install --quiet --upgrade -r "$INTER_SESSION_DIR/skills/inter-session/requirements.txt"
+# Start the bus client in every session, not only after /inter-session runs.
+# This edits the installed copy, so it has to be redone after every update.
+"$INTER_SESSION_VENV/bin/python" "$INTER_SESSION_DIR/skills/inter-session/bin/auto_start.py" --on
+# Its options live in claude/settings.json under pluginConfigs.
 
 # ccmenu
 # defaults import net.sourceforge.cruisecontrol.CCMenu ccmenu.plist
