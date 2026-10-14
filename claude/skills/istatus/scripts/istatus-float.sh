@@ -1,12 +1,13 @@
 #!/bin/bash
 # istatus-float — the istatus sidebar as a floating pane in the top-right
-# corner of a Claude pane's window, so it can sit over the window without
-# taking a slice of it, and without taking the keyboard unless asked.
+# corner of a Claude pane, so it can sit over that pane without taking a
+# slice of the window, and without taking the keyboard unless asked. Each
+# Claude pane in a window has its own, and the keys act on the active pane's.
 #
 # Usage (from the tmux key bindings, with the active pane as <pane>, which may
 # be the status pane itself):
 #   istatus-float.sh toggle <pane>
-#     Shows the window's status pane, collapsed to its one-row title bar
+#     Shows the pane's status pane, collapsed to its one-row title bar
 #     (counts only), or closes it if it is showing. Closing it while it has
 #     the keyboard gives the keyboard to the Claude pane.
 #   istatus-float.sh expand <pane>
@@ -125,25 +126,28 @@ mark() {
 }
 
 # geometry <paired> collapsed|expanded -> "width height x y" of the status
-# pane's border box. Its content sits INSET cells in from the window's
+# pane's border box. Its content sits INSET cells in from the paired pane's
 # top-right corner: one for the border and the rest a gap, so it reads as a
-# box rather than part of the edge.
+# box rather than part of the edge. The paired pane's corner, not the
+# window's, so each Claude pane in a split window gets its own status pane
+# over itself rather than all of them stacking in one corner.
 geometry() {
-  local paired="$1" shape="$2" ww wh w h
-  read -r ww wh < <(tmux display-message -p -t "$paired" '#{window_width} #{window_height}')
-  local room_w=$(( ww - INSET - 1 )) room_h=$(( wh - INSET - 1 ))
+  local paired="$1" shape="$2" pl pt pw ph w h
+  read -r pl pt pw ph < <(tmux display-message -p -t "$paired" \
+    '#{pane_left} #{pane_top} #{pane_width} #{pane_height}')
+  local room_w=$(( pw - INSET - 1 )) room_h=$(( ph - INSET - 1 ))
   if [[ "$shape" == collapsed ]]; then
     w=$(( room_w < COLLAPSED_COLS ? room_w : COLLAPSED_COLS ))
     h=1
   else
-    w=$(( ww / 3 > COLLAPSED_COLS ? ww / 3 : COLLAPSED_COLS ))
+    w=$(( pw / 3 > COLLAPSED_COLS ? pw / 3 : COLLAPSED_COLS ))
     w=$(( w > room_w ? room_w : w ))
-    h=$(( wh * 2 / 3 ))
+    h=$(( ph * 2 / 3 ))
     h=$(( h < 3 ? 3 : h ))
     h=$(( h > room_h ? room_h : h ))
   fi
   # w and h are the content; the border adds a cell on every side.
-  printf '%s %s %s %s\n' "$(( w + 2 ))" "$(( h + 2 ))" "$(( ww - w - INSET - 1 ))" "$(( INSET - 1 ))"
+  printf '%s %s %s %s\n' "$(( w + 2 ))" "$(( h + 2 ))" "$(( pl + pw - w - INSET - 1 ))" "$(( pt + INSET - 1 ))"
 }
 
 # The Claude pane a key was pressed for: the pane itself, or, when it is the

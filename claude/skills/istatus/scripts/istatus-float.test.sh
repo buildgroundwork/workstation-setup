@@ -84,6 +84,30 @@ assert_eq "$(geometry "$(status_pane)")" "1:$MAIN:2:118:1" \
   "toggle opens a one-row floating pane, paired with the pane, inset from the top right"
 teardown
 
+# ── side by side, each pane's status pane sits in that pane's corner ─────────
+# Placed by the window's corner, both would land on top of each other.
+setup
+right=$(tmux split-window -h -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float toggle "$MAIN"
+float toggle "$right"
+left_edge=$(tmux display-message -p -t "$MAIN" '#{e|-:#{e|+:#{pane_left},#{pane_width}},2}')
+assert_eq "$(tmux list-panes -F '#{@istatus_paired}:#{pane_top}:#{e|+:#{pane_left},#{pane_width}}' | grep -v '^:' | sort)" \
+  "$(printf '%s\n' "$MAIN:2:$left_edge" "$right:2:118" | sort)" \
+  "toggle in each of two side-by-side panes opens a status pane in that pane's top-right corner"
+teardown
+
+# ── stacked, the lower pane's status pane sits below the top of its pane ─────
+setup
+lower=$(tmux split-window -v -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float expand "$lower"
+lower_top=$(tmux display-message -p -t "$lower" '#{e|+:#{pane_top},2}')
+lower_bottom=$(tmux display-message -p -t "$lower" '#{e|+:#{pane_top},#{pane_height}}')
+fp_top=$(tmux display-message -p -t "$(status_pane)" '#{pane_top}')
+fp_bottom=$(tmux display-message -p -t "$(status_pane)" '#{e|+:#{pane_top},#{pane_height}}')
+assert_eq "$fp_top:$(( fp_bottom < lower_bottom ))" "$lower_top:1" \
+  "expand in the lower of two stacked panes keeps the status pane inside that pane"
+teardown
+
 # ── toggle leaves the keyboard with the Claude pane ──────────────────────────
 setup
 float toggle "$MAIN"
