@@ -4,6 +4,13 @@ set t_Co=256
 let g:solarized_termcolors=16
 set background=light
 
+" Homebrew's vim bottle hard-codes a versioned Python path that breaks when
+" Homebrew moves to a new Python; point at whichever python@3 is current.
+let s:brew_python = '/opt/homebrew/opt/python@3/Frameworks/Python.framework/Versions/Current/Python'
+if filereadable(s:brew_python)
+  let &pythonthreedll = s:brew_python
+endif
+
 if exists($TMUX)
   " let &t_SI = "\<Esc>Ptmux;\<Esc>\<Esc>]50;CursorShape=3\x7\<Esc>\\"
   " let &t_SR = "\<Esc>Ptmux;\<Esc>\<Esc>]50;CursorShape=2\x7\<Esc>\\"
