@@ -99,6 +99,11 @@ ln -sfn $DIR/claude/hooks ~/.claude/hooks
 # settings.json is shared config; the secret-bearing env stays in the
 # untracked settings.local.json alongside it.
 ln -sf $DIR/claude/settings.json ~/.claude/settings.json
+# RTK: settings.json carries its hook and CLAUDE.md imports RTK.md, so this is
+# rtk init -g's result, committed instead of regenerated on every machine.
+ln -sf $DIR/claude/RTK.md ~/.claude/RTK.md
+mkdir -p ~/Library/Application\ Support/rtk
+ln -sf $DIR/rtk/config.toml ~/Library/Application\ Support/rtk/config.toml
 # Commands the skills tell every session to run (istatus decide, isend, ...)
 mkdir -p ~/.local/bin
 for f in $DIR/claude/skills/istatus/scripts/istatus.sh $DIR/claude/skills/hub/scripts/{isend,iflag,ilist}.sh; do
