@@ -141,3 +141,5 @@ Memory files are keyed per-project (`~/.claude/projects/<cwd>/memory/`), so a fa
 - **No → it's project-specific.** Save it as per-project memory as usual. Project = this repo's state, phase/status, local quirks, who-owns-what here.
 
 When unsure, ask which scope I want rather than defaulting to project memory.
+
+@RTK.md
