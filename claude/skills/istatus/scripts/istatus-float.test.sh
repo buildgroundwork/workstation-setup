@@ -108,6 +108,87 @@ assert_eq "$fp_top:$(( fp_bottom < lower_bottom ))" "$lower_top:1" \
   "expand in the lower of two stacked panes keeps the status pane inside that pane"
 teardown
 
+# ── relayout puts it back in its corner after the window shrinks and regrows ─
+# The window-resized and window-layout-changed hooks run relayout for the
+# window; these cases call it directly, as the hooks do.
+setup
+float toggle "$MAIN"
+tmux resize-window -x 60 -y 20
+tmux resize-window -x 120 -y 40
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+assert_eq "$(geometry "$(status_pane)")" "1:$MAIN:2:118:1" \
+  "relayout moves the status pane back to its pane's corner after a resize"
+teardown
+
+# ── relayout follows the pane when a split makes it narrower ─────────────────
+setup
+float toggle "$MAIN"
+tmux split-window -h -d -t "$MAIN" 'sleep 300'
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+want_edge=$(tmux display-message -p -t "$MAIN" '#{e|-:#{e|+:#{pane_left},#{pane_width}},2}')
+assert_eq "$(geometry "$(status_pane)")" "1:$MAIN:2:$want_edge:1" \
+  "relayout moves the status pane into its pane's new corner after a split"
+teardown
+
+# ── relayout follows the pane when it swaps places ───────────────────────────
+setup
+right=$(tmux split-window -h -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float toggle "$MAIN"
+tmux swap-pane -d -s "$MAIN" -t "$right"
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+assert_eq "$(geometry "$(status_pane)")" "1:$MAIN:2:118:1" \
+  "relayout moves the status pane with its pane after a swap"
+teardown
+
+# ── relayout keeps an expanded status pane expanded ──────────────────────────
+setup
+float expand "$MAIN"
+tmux split-window -h -d -t "$MAIN" 'sleep 300'
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+want_edge=$(tmux display-message -p -t "$MAIN" '#{e|-:#{e|+:#{pane_left},#{pane_width}},2}')
+assert_eq "$(shape "$(status_pane)"):$(geometry "$(status_pane)" | cut -d: -f4)" "expanded:$want_edge" \
+  "relayout keeps the status pane's shape as it moves it"
+teardown
+
+# ── relayout leaves a status pane that is already in place alone ─────────────
+# Moving a floating pane fires window-layout-changed, so the hook runs relayout
+# again after every move it makes. That run must change nothing, or it loops.
+setup
+float toggle "$MAIN"
+fp=$(status_pane)
+: > "$DIR/layout"
+tmux set-hook -g window-layout-changed "run-shell 'echo x >> $DIR/layout'"
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+sleep 0.3
+assert_eq "$(status_pane):$(wc -c < "$DIR/layout" | tr -d ' ')" "$fp:0" \
+  "relayout does not touch a status pane that is already where it belongs"
+teardown
+
+# ── relayout moves the status pane to the window its pane moved to ───────────
+setup
+float expand "$MAIN"
+old_window=$(tmux display-message -p -t "$MAIN" '#{window_id}')
+new_window=$(tmux new-window -d -P -F '#{window_id}' 'sleep 300')
+tmux move-pane -d -s "$MAIN" -t "$new_window"
+float relayout "$old_window"
+fp=$(tmux list-panes -a -F '#{pane_id} #{@istatus_paired}' | awk -v p="$MAIN" '$2 == p { print $1 }')
+want_edge=$(tmux display-message -p -t "$MAIN" '#{e|-:#{e|+:#{pane_left},#{pane_width}},2}')
+assert_eq "$(tmux display-message -p -t "$fp" '#{window_id}'):$(shape "$fp"):$(geometry "$fp" | cut -d: -f1-2,4)" \
+  "$new_window:expanded:1:$MAIN:$want_edge" \
+  "relayout moves the status pane, still expanded, into its pane's new window"
+teardown
+
+# ── relayout closes a status pane whose Claude pane is gone ──────────────────
+setup
+other=$(tmux split-window -h -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float toggle "$MAIN"
+window=$(tmux display-message -p -t "$MAIN" '#{window_id}')
+tmux kill-pane -t "$MAIN"
+float relayout "$window"
+assert_eq "$(tmux list-panes -t "$window" -F '#{pane_id}' | tr '\n' ' ')" "$other " \
+  "relayout closes the status pane when its Claude pane has closed"
+teardown
+
 # ── toggle leaves the keyboard with the Claude pane ──────────────────────────
 setup
 float toggle "$MAIN"

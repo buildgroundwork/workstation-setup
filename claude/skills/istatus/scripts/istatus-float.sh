@@ -17,6 +17,14 @@
 #   istatus-float.sh focus <pane>
 #     Moves the keyboard into the status pane, or back to the Claude pane
 #     from it, opening it expanded if it is closed.
+#   istatus-float.sh relayout <window>
+#     Puts each status pane in the window back where it belongs after the
+#     window or its panes changed: into its Claude pane's corner, at its
+#     current shape; into the Claude pane's new window if that pane moved to
+#     another one; or closed if the Claude pane is gone. tmux.conf runs it
+#     from the window-resized and window-layout-changed hooks. A status pane
+#     already in place is left alone, which matters: moving one fires
+#     window-layout-changed again, and that run must find nothing to do.
 #
 # Needs tmux 3.8 or later, which sizes and places a floating pane by its
 # border and can resize and move one in place. (3.7 sized them by content,
@@ -37,7 +45,11 @@ die() { printf 'istatus-float: %s\n' "$*" >&2; exit 1; }
 
 main() {
   local subcmd="${1:-}" pane="${2:-}"
-  [[ -n "$pane" ]] || die "usage: istatus-float.sh {toggle|expand|focus} <pane>"
+  [[ -n "$pane" ]] || die "usage: istatus-float.sh {toggle|expand|focus} <pane> | relayout <window>"
+  if [[ "$subcmd" == relayout ]]; then
+    cmd_relayout "$pane"
+    return
+  fi
   local paired status
   paired=$(paired_pane "$pane")
   status=$(status_pane "$paired")
@@ -82,6 +94,56 @@ cmd_focus() {
   else
     tmux select-pane -t "$status"
   fi
+}
+
+cmd_relayout() {
+  local window="$1" status paired
+  while read -r status paired; do
+    [[ -n "$paired" ]] && relayout_one "$status" "$paired" "$window"
+  done < <(tmux list-panes -t "$window" -F '#{pane_id} #{@istatus_paired}' 2>/dev/null)
+  return 0
+}
+
+relayout_one() {
+  local status="$1" paired="$2" window="$3" shape
+  shape=$(shape_of "$status")
+  if ! pane_exists "$paired"; then
+    tmux kill-pane -t "$status" 2>/dev/null || true
+  elif [[ "$(tmux display-message -p -t "$paired" '#{window_id}')" != "$window" ]]; then
+    follow "$status" "$paired" "$shape"
+  elif ! in_place "$status" "$paired" "$shape"; then
+    reshape "$status" "$paired" "$shape"
+  fi
+  return 0
+}
+
+# follow <status> <paired> <shape> — the Claude pane moved to another window,
+# so close its status pane here and open one at the same shape there. Killing
+# first means that when the hook runs twice for one move, only the run that
+# killed it reopens it.
+follow() {
+  local status="$1" paired="$2" shape="$3"
+  tmux kill-pane -t "$status" 2>/dev/null || return 0
+  [[ -z "$(status_pane "$paired")" ]] && open "$paired" "$shape" background
+  return 0
+}
+
+# in_place <status> <paired> <shape> — whether the status pane's border box
+# already matches what geometry would give it. pane_left/top/width/height are
+# the content, one cell inside the border on every side.
+in_place() {
+  local status="$1" paired="$2" shape="$3" current
+  current=$(tmux display-message -p -t "$status" \
+    '#{e|+:#{pane_width},2} #{e|+:#{pane_height},2} #{e|-:#{pane_left},1} #{e|-:#{pane_top},1}')
+  [[ "$current" == "$(geometry "$paired" "$shape")" ]]
+}
+
+shape_of() {
+  [[ "$(tmux display-message -p -t "$1" '#{@istatus_expanded}')" == 1 ]] && echo expanded || echo collapsed
+}
+
+pane_exists() {
+  tmux list-panes -a -F '#{pane_id}' | grep -qx -- "$1"
 }
 
 # hand_back <pane> <status> <paired> — after the status pane closed or
