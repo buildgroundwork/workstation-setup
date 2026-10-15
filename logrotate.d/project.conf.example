@@ -1,4 +1,4 @@
-/Users/dev/projects/<project-name>/log/*.log {
+/Users/dev/workspace/<project-name>/log/*.log {
   daily
   copytruncate
   rotate 3

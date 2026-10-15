@@ -75,7 +75,7 @@ fi
 ~/.tmux/plugins/tpm/bin/update_plugins all
 
 # create directories
-mkdir -p ~/projects
+mkdir -p ~/workspace
 
 # preserve git author
 GIT_USER_EMAIL=$(git config --get --global user.email)

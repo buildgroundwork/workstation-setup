@@ -1,7 +1,7 @@
 # Copy to tmuxinator/<project-name>.yml and add a matching
 # `tmuxinator start <project-name>` line to tmuxinator/mux.
 name: <Project Name>
-root: ~/projects/<project-name>
+root: ~/workspace/<project-name>
 
 tmux_options: -2
 
@@ -25,4 +25,4 @@ windows:
   #     layout: even-horizontal
   #     panes:
   #       - bin/dev
-  #       - cd ~/projects/<api-project> && bin/dev
+  #       - cd ~/workspace/<api-project> && bin/dev
