@@ -1,0 +1,11 @@
+# RTK settings, linked to ~/Library/Application Support/rtk/config.toml by
+# setup.sh.
+
+[hooks]
+# RTK's hook rewrites these to `rtk <cmd>`, and Claude Code doesn't auto-approve
+# the rewritten form the way it does the read-only original, so each one would
+# start asking for approval. Leave them unrewritten.
+#
+# `ls` is here for a different reason: rtk's listing hid a directory entry
+# ("1 filtered"), which read as if the directory didn't exist.
+exclude_commands = ["find", "wc", "tree", "rg", "diff", "du", "df", "stat", "ps", "git branch", "ls"]
