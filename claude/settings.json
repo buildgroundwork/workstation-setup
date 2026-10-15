@@ -106,6 +106,15 @@
             "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh add"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rtk hook claude"
+          }
+        ]
       }
     ],
     "PostToolUse": [
