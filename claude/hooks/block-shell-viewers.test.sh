@@ -83,5 +83,39 @@ Deny sed -i anywhere, which closes the gap of sed -i behind xargs
 EOF")" allow "sed -i mentioned in prose is allowed"
 assert_eq "$(verdict 'payload=$(cat)')" allow "cat reading stdin in a substitution is allowed"
 
+# ── a heredoc body is data, not commands: allowed ────────────────────────────
+assert_eq "$(verdict $'istatus summary <<\'EOF\'\ntail end of the work\nEOF')" allow \
+  "a body line starting with tail is allowed (quoted marker)"
+assert_eq "$(verdict $'istatus summary <<EOF\ncat the notes\nEOF')" allow \
+  "a body line starting with cat is allowed (bare marker)"
+assert_eq "$(verdict $'istatus summary <<"EOF"\nhead of the queue\nEOF')" allow \
+  "a body line starting with head is allowed (double-quoted marker)"
+assert_eq "$(verdict $'cmd <<-EOF\n\thead of the line\n\tEOF')" allow \
+  "a tab-indented body and closing marker are allowed with <<-"
+assert_eq "$(verdict $'cmd <<A <<B\nhead one\nA\ncat two\nB')" allow \
+  "the bodies of two heredocs on one line are both skipped"
+assert_eq "$(verdict $'cmd <<EOF\nsed -i s/a/b/ foo.rb\nEOF')" allow \
+  "a body line starting with sed -i is allowed"
+assert_eq "$(verdict $'cmd <<EOF\nEOF2\ncat foo\nEOF')" allow \
+  "a near-miss marker does not end the body early"
+assert_eq "$(verdict $'cmd <<EOF\ncat foo')" allow \
+  "an unclosed heredoc runs to the end of the command"
+
+# ── what comes around a heredoc still counts: denied ─────────────────────────
+assert_eq "$(verdict $'cmd <<EOF\nbody\nEOF\ncat foo.rb')" deny \
+  "cat after the closing marker is denied"
+assert_eq "$(verdict $'cmd <<\'EOF\'\nbody\nEOF\nhead foo.rb')" deny \
+  "head after a quoted marker's closing line is denied"
+assert_eq "$(verdict $'cmd <<EOF && cat foo.rb\nbody\nEOF')" deny \
+  "cat after the opener on the same line is denied"
+assert_eq "$(verdict $'cmd <<-EOF\n\tbody\n\tEOF\ntail foo.rb')" deny \
+  "tail after a <<- heredoc is denied"
+
+# ── << that does not open a heredoc must not swallow what follows ────────────
+assert_eq "$(verdict $'grep x <<< y\nhead foo.rb')" deny \
+  "a here-string does not start a heredoc"
+assert_eq "$(verdict $'echo $((1 << 2))\nhead foo.rb')" deny \
+  "a shift in arithmetic does not start a heredoc"
+
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

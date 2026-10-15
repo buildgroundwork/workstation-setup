@@ -23,6 +23,14 @@
 #     behind xargs. Not as bare words mid-line, so a commit message or
 #     heredoc that mentions sed -i in prose still goes through.
 #
+# Heredoc bodies are stripped before any of that is checked (see
+# strip_heredoc_bodies): a line inside a body that starts with "tail" or "sed -i"
+# is text, not a command, so a commit message or `istatus summary` body can say
+# anything. The opener's line stays, so `cat <<EOF > file` is still caught. The
+# stripping works on plain text, so a `<<WORD` inside a quoted string reads as
+# an opener and hides the lines after it; that fails open (allows) rather than
+# wrongly denying, the same trade as the gap below.
+#
 # Known gap, on purpose: `: | head file` sneaks a file read in after a pipe.
 # Catching it means parsing each command's arguments; the deny message tells
 # the model not to route around the hook, which covers a deliberate dodge.
@@ -46,10 +54,57 @@ command=$(jq -r '.tool_input.command // ""' <<<"$payload")
 [[ -z "$command" ]] && exit 0
 
 nl=$'\n'
+sq="'"
+dq='"'
 command_position="(^|[;&${nl}]|\|\|)[[:space:]]*(sed|cat|head|tail)([[:space:]]|$)"
 in_place_sed="(^|[;&|${nl}]|xargs([[:space:]]+-[^[:space:]]+)*)[[:space:]]*sed[[:space:]]([^;&|${nl}]*[[:space:]])?(-[[:alpha:]]*i|--in-place)"
+# A heredoc opener: << or <<-, then a marker that is a bare word, 'quoted' or
+# "quoted". Not preceded by another <, so a here-string (<<<) is not one, and
+# the marker must start with a letter, underscore or quote, so a shift in
+# arithmetic (1 << 2) is not one either.
+heredoc_opener="(^|[^<])<<(-?)[[:space:]]*(\\\\?[A-Za-z_][A-Za-z0-9_]*|${sq}[^${sq}]*${sq}|${dq}[^${dq}]*${dq})"
 
-if [[ "$command" =~ $command_position || "$command" =~ $in_place_sed ]]; then
+# strip_heredoc_bodies <command> — the command with the body lines of each
+# heredoc removed, from the line after its opener through its closing marker
+# (or the end of the command, if it never closes). The opener's own line stays,
+# so `cat <<EOF > file` and anything after it on that line are still checked.
+# Several heredocs on one line take their bodies in order, as the shell does.
+strip_heredoc_bodies() {
+  local line rest match token
+  local -a markers=() dashes=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if (( ${#markers[@]} )); then
+      if closes_heredoc "$line" "${markers[0]}" "${dashes[0]}"; then
+        markers=("${markers[@]:1}")
+        dashes=("${dashes[@]:1}")
+      fi
+      continue
+    fi
+    printf '%s\n' "$line"
+    rest="$line"
+    while [[ "$rest" =~ $heredoc_opener ]]; do
+      match="${BASH_REMATCH[0]}"
+      dashes+=("${BASH_REMATCH[2]}")
+      token="${BASH_REMATCH[3]}"
+      markers+=("${token//[\'\"\\]/}")
+      rest="${rest#*"$match"}"
+    done
+  done <<<"$1"
+}
+
+# closes_heredoc <line> <marker> <dash> — whether the line ends the heredoc.
+# With <<-, the shell ignores leading tabs on the closing line.
+closes_heredoc() {
+  local line="$1"
+  if [[ "$3" == "-" ]]; then
+    while [[ "$line" == $'\t'* ]]; do line="${line#$'\t'}"; done
+  fi
+  [[ "$line" == "$2" ]]
+}
+
+scrubbed=$(strip_heredoc_bodies "$command")
+
+if [[ "$scrubbed" =~ $command_position || "$scrubbed" =~ $in_place_sed ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
