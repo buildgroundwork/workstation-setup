@@ -298,6 +298,41 @@ assert_eq "$(( small < 26 ))" "1" \
   "the sidebar sizes a short list well under the two-thirds cap"
 teardown
 
+# ── show opens the status pane, expanded, when there is none ─────────────────
+# For a jump from the attention popup: the jump is about what the session
+# wants, so the list is open, and it does not take the keyboard.
+setup
+float show "$MAIN"
+fp=$(status_pane)
+assert_eq "$(count):$(shape "$fp"):$(geometry "$fp" | cut -d: -f1-2):$(active)" "1:expanded:1:$MAIN:$MAIN" \
+  "show opens an expanded floating status pane for the pane, without taking focus"
+teardown
+
+# ── show leaves a status pane that is already open as it is ──────────────────
+# Unlike toggle, which would close it.
+setup
+float toggle "$MAIN"
+float show "$MAIN"
+assert_eq "$(count):$(shape "$(status_pane)")" "1:collapsed" \
+  "show leaves a collapsed status pane collapsed"
+teardown
+
+setup
+float expand "$MAIN"
+fp=$(status_pane)
+float show "$MAIN"
+assert_eq "$(count):$(status_pane):$(shape "$fp")" "1:$fp:expanded" \
+  "show leaves an expanded status pane open, the same pane"
+teardown
+
+# ── show works on a Claude pane in a window that is not showing ──────────────
+setup
+other=$(tmux new-window -d -P -F '#{pane_id}' 'sleep 300')
+float show "$other"
+assert_eq "$(tmux list-panes -t "$other" -F '#{pane_floating_flag}:#{@istatus_paired}' | grep -c "^1:$other\$"):$(active)" "1:$MAIN" \
+  "show opens a status pane in another window without switching to it"
+teardown
+
 # ── toggle leaves the keyboard with the Claude pane ──────────────────────────
 setup
 float toggle "$MAIN"

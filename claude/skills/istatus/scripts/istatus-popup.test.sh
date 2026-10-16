@@ -250,6 +250,36 @@ assert_eq "$(grep -c '^switch-client -t %42$' "$TMUX_CALLS")" "1" \
 unset TMUX_CALLS
 teardown
 
+# ── the popup opens the picked pane's status pane before it switches ─────────
+# So the sidebar is there on arrival. istatus-float.sh is a stub that logs to
+# the same file as the stub tmux, so the order shows.
+setup
+make_stub_tmux
+printf '#!/bin/bash\nprintf "float %%s\\n" "$*" >> "${TMUX_CALLS:-/dev/null}"\n' > "$DIR/bin/float"
+chmod +x "$DIR/bin/float"
+live_session sess-1 %42 "working on X" "[$(blocking "needs approval")]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+export TMUX_CALLS="$DIR/tmux-calls.log"
+ISTATUS_FLOAT="$DIR/bin/float" run_popup > /dev/null
+assert_eq "$(awk '/^float show %42$/ { f = NR } /^switch-client -t %42$/ { s = NR } END { print (f && s && f < s) ? "first" : "wrong" }' "$TMUX_CALLS")" "first" \
+  "the popup shows the picked pane's status pane, then switches to the pane"
+unset TMUX_CALLS
+teardown
+
+# ── a failing status pane does not stop the jump ─────────────────────────────
+setup
+make_stub_tmux
+printf '#!/bin/bash\nexit 1\n' > "$DIR/bin/float"
+chmod +x "$DIR/bin/float"
+live_session sess-1 %42 "working on X" "[$(blocking "needs approval")]"
+export ISTATUS_TMUX_PANES="%42${TAB}proj${TAB}3"
+export TMUX_CALLS="$DIR/tmux-calls.log"
+ISTATUS_FLOAT="$DIR/bin/float" run_popup > /dev/null
+assert_eq "$(grep -c '^switch-client -t %42$' "$TMUX_CALLS")" "1" \
+  "the popup still switches when opening the status pane fails"
+unset TMUX_CALLS
+teardown
+
 # ── the popup leaves no temp files behind ────────────────────────────────────
 setup
 make_stub_tmux

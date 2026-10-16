@@ -18,6 +18,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INBOX="$SCRIPT_DIR/istatus-inbox.sh"
 ISTATUS="$SCRIPT_DIR/istatus.sh"
+# ISTATUS_FLOAT overrides it, for tests.
+FLOAT="${ISTATUS_FLOAT:-$SCRIPT_DIR/istatus-float.sh}"
 
 cmd_rows() {
   "$INBOX" list | jq -r '
@@ -73,7 +75,8 @@ cmd_popup() {
 }
 
 # pick_and_jump <input file> <output file> — show the rows in fzf in a popup
-# and, if one is picked, mark its pane viewed and switch to it.
+# and, if one is picked, mark its pane viewed, show its status pane and switch
+# to it.
 pick_and_jump() {
   local input="$1" output="$2" selected pane
 
@@ -108,6 +111,11 @@ pick_and_jump() {
   # notice stops counting. Best-effort; the jump matters more than the
   # bookkeeping.
   "$SCRIPT_DIR/istatus-hook.sh" viewed "$pane" || true
+
+  # The jump is about what the session wants, so its status pane is showing
+  # when you arrive. Before the switch, so it is already there. Best-effort,
+  # like the rest: a missing tmux 3.8 or a failure must not stop the jump.
+  "$FLOAT" show "$pane" >/dev/null 2>&1 || true
 
   # A pane-targeted switch-client lands on the right session, window and pane
   # in one step; the three-step sequence races.

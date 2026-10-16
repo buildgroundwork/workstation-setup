@@ -17,6 +17,10 @@
 #   istatus-float.sh focus <pane>
 #     Moves the keyboard into the status pane, or back to the Claude pane
 #     from it, opening it expanded if it is closed.
+#   istatus-float.sh show <pane>
+#     Run by the attention popup (prefix A A) before it jumps to <pane>: opens
+#     the status pane, expanded, if there is none, even if it was closed on
+#     purpose, and leaves one that is open as it is. Never takes the keyboard.
 #   istatus-float.sh fit <status-pane> <rows>
 #     Run by the sidebar in the status pane, not from a key: records the rows
 #     its content needs and resizes an expanded pane to them, within three rows
@@ -52,7 +56,7 @@ die() { printf 'istatus-float: %s\n' "$*" >&2; exit 1; }
 
 main() {
   local subcmd="${1:-}" pane="${2:-}"
-  [[ -n "$pane" ]] || die "usage: istatus-float.sh {toggle|expand|focus} <pane> | relayout <window> | fit <status-pane> <rows>"
+  [[ -n "$pane" ]] || die "usage: istatus-float.sh {toggle|expand|focus|show} <pane> | relayout <window> | fit <status-pane> <rows>"
   if [[ "$subcmd" == relayout ]]; then
     cmd_relayout "$pane"
     return
@@ -67,8 +71,18 @@ main() {
     toggle) cmd_toggle "$pane" "$paired" "$status" ;;
     expand) cmd_expand "$pane" "$paired" "$status" ;;
     focus)  cmd_focus "$pane" "$paired" "$status" ;;
-    *)      die "usage: istatus-float.sh {toggle|expand|focus} <pane>" ;;
+    show)   cmd_show "$paired" "$status" ;;
+    *)      die "usage: istatus-float.sh {toggle|expand|focus|show} <pane>" ;;
   esac
+}
+
+# Run by the attention popup before it jumps to a pane: the jump is about what
+# the session wants, so make sure its list is showing. A status pane that is
+# already open is left as it is, in whatever shape and wherever it is, and one
+# that was closed on purpose is opened again. Never takes the keyboard.
+cmd_show() {
+  local paired="$1" status="$2"
+  [[ -n "$status" ]] || open "$paired" expanded background
 }
 
 cmd_toggle() {
