@@ -17,6 +17,11 @@
 #   istatus-float.sh focus <pane>
 #     Moves the keyboard into the status pane, or back to the Claude pane
 #     from it, opening it expanded if it is closed.
+#   istatus-float.sh fit <status-pane> <rows>
+#     Run by the sidebar in the status pane, not from a key: records the rows
+#     its content needs and resizes an expanded pane to them, within three rows
+#     and two thirds of its Claude pane (past that the list scrolls). A
+#     collapsed pane stays one row and uses them when it expands.
 #   istatus-float.sh relayout <window>
 #     Puts each status pane in the window back where it belongs after the
 #     window or its panes changed: into its Claude pane's corner, at its
@@ -39,15 +44,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SIDEBAR="$SCRIPT_DIR/istatus-sidebar.sh"
 COLLAPSED_COLS=44
+# The fewest rows an expanded pane takes; two or fewer reads as collapsed.
+MIN_ROWS=3
 INSET=2
 
 die() { printf 'istatus-float: %s\n' "$*" >&2; exit 1; }
 
 main() {
   local subcmd="${1:-}" pane="${2:-}"
-  [[ -n "$pane" ]] || die "usage: istatus-float.sh {toggle|expand|focus} <pane> | relayout <window>"
+  [[ -n "$pane" ]] || die "usage: istatus-float.sh {toggle|expand|focus} <pane> | relayout <window> | fit <status-pane> <rows>"
   if [[ "$subcmd" == relayout ]]; then
     cmd_relayout "$pane"
+    return
+  elif [[ "$subcmd" == fit ]]; then
+    cmd_fit "$pane" "${3:-}"
     return
   fi
   local paired status
@@ -96,6 +106,22 @@ cmd_focus() {
   fi
 }
 
+# Run by the sidebar itself, with its own pane, when its content needs a
+# different number of rows. Records the rows on the pane (@istatus_rows), which
+# geometry reads, so that relayout agrees with the size and leaves it alone;
+# then resizes an expanded pane in place. A collapsed pane keeps its one row
+# and uses the rows the next time it expands. Anything that is not a floating
+# status pane is ignored.
+cmd_fit() {
+  local status="$1" rows="$2" paired
+  [[ "$rows" =~ ^[0-9]+$ ]] || die "fit needs a number of rows"
+  paired=$(tmux display-message -p -t "$status" '#{?pane_floating_flag,#{@istatus_paired},}' 2>/dev/null) || return 0
+  [[ -n "$paired" ]] && pane_exists "$paired" || return 0
+  tmux set-option -p -t "$status" @istatus_rows "$rows"
+  [[ "$(shape_of "$status")" == expanded ]] || return 0
+  in_place "$status" "$paired" expanded || reshape "$status" "$paired" expanded
+}
+
 cmd_relayout() {
   local window="$1" status paired
   while read -r status paired; do
@@ -135,7 +161,7 @@ in_place() {
   local status="$1" paired="$2" shape="$3" current
   current=$(tmux display-message -p -t "$status" \
     '#{e|+:#{pane_width},2} #{e|+:#{pane_height},2} #{e|-:#{pane_left},1} #{e|-:#{pane_top},1}')
-  [[ "$current" == "$(geometry "$paired" "$shape")" ]]
+  [[ "$current" == "$(geometry "$paired" "$shape" "$status")" ]]
 }
 
 shape_of() {
@@ -172,7 +198,7 @@ open() {
 # window's right edge, where tmux would clip it.
 reshape() {
   local status="$1" paired="$2" shape="$3" w h x y
-  read -r w h x y < <(geometry "$paired" "$shape")
+  read -r w h x y < <(geometry "$paired" "$shape" "$status")
   if [[ "$shape" == expanded ]]; then
     tmux move-pane -t "$status" -X "$x" -Y "$y"
     tmux resize-pane -t "$status" -x "$w" -y "$h"
@@ -187,14 +213,18 @@ mark() {
   tmux set-option -p -t "$1" @istatus_expanded "$([[ "$2" == expanded ]] && echo 1 || echo 0)"
 }
 
-# geometry <paired> collapsed|expanded -> "width height x y" of the status
-# pane's border box. Its content sits INSET cells in from the paired pane's
-# top-right corner: one for the border and the rest a gap, so it reads as a
-# box rather than part of the edge. The paired pane's corner, not the
+# geometry <paired> collapsed|expanded [<status>] -> "width height x y" of the
+# status pane's border box. Its content sits INSET cells in from the paired
+# pane's top-right corner: one for the border and the rest a gap, so it reads
+# as a box rather than part of the edge. The paired pane's corner, not the
 # window's, so each Claude pane in a split window gets its own status pane
-# over itself rather than all of them stacking in one corner.
+# over itself rather than all of them stacking in one corner. An expanded pane
+# is as tall as the rows its sidebar asked for (@istatus_rows, set by fit) on
+# <status>, at least MIN_ROWS and at most two thirds of the paired pane; with
+# none asked for yet, it is the two thirds.
 geometry() {
-  local paired="$1" shape="$2" pl pt pw ph w h
+  local paired="$1" shape="$2" status="${3:-}" pl pt pw ph w h rows=""
+  [[ -z "$status" ]] || rows=$(tmux display-message -p -t "$status" '#{@istatus_rows}')
   read -r pl pt pw ph < <(tmux display-message -p -t "$paired" \
     '#{pane_left} #{pane_top} #{pane_width} #{pane_height}')
   local room_w=$(( pw - INSET - 1 )) room_h=$(( ph - INSET - 1 ))
@@ -205,8 +235,12 @@ geometry() {
     w=$(( pw / 3 > COLLAPSED_COLS ? pw / 3 : COLLAPSED_COLS ))
     w=$(( w > room_w ? room_w : w ))
     h=$(( ph * 2 / 3 ))
-    h=$(( h < 3 ? 3 : h ))
+    h=$(( h < MIN_ROWS ? MIN_ROWS : h ))
     h=$(( h > room_h ? room_h : h ))
+    if [[ "$rows" =~ ^[0-9]+$ ]]; then
+      rows=$(( rows < MIN_ROWS ? MIN_ROWS : rows ))
+      h=$(( rows < h ? rows : h ))
+    fi
   fi
   # w and h are the content; the border adds a cell on every side.
   printf '%s %s %s %s\n' "$(( w + 2 ))" "$(( h + 2 ))" "$(( pl + pw - w - INSET - 1 ))" "$(( pt + INSET - 1 ))"

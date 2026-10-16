@@ -151,6 +151,28 @@ class PackTest(unittest.TestCase):
                          ["j/k move  r read", "u unread"])
 
 
+class FitRequestTest(unittest.TestCase):
+    """When the sidebar asks istatus-float.sh to resize its pane: when its
+    content wants a different number of rows than it last asked for, and only
+    while the pane is expanded. A request the pane cannot grant (past its
+    maximum) is not repeated, since the same content would get the same answer."""
+
+    def test_the_first_look_at_the_content_asks_for_its_rows(self):
+        self.assertEqual(sidebar.fit_request(9, None, 20), 9)
+
+    def test_unchanged_content_asks_for_nothing(self):
+        self.assertIsNone(sidebar.fit_request(9, 9, 20))
+
+    def test_changed_content_asks_again(self):
+        self.assertEqual(sidebar.fit_request(12, 9, 20), 12)
+
+    def test_a_pane_the_content_does_not_fill_is_not_asked_again(self):
+        self.assertIsNone(sidebar.fit_request(30, 30, 20))
+
+    def test_a_collapsed_pane_asks_for_nothing(self):
+        self.assertIsNone(sidebar.fit_request(9, None, sidebar.COLLAPSED_ROWS))
+
+
 class TitleBarTest(unittest.TestCase):
     """The header bar: the pane on the left, what is waiting on the right,
     padded to the full width so its background spans the pane."""

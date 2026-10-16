@@ -25,6 +25,9 @@ setup() {
   DIR="$(mktemp -d)"
   export CLAUDE_TMUX_ATTENTION_DIR="$DIR/state"
   mkdir -p "$CLAUDE_TMUX_ATTENTION_DIR"
+  # The sidebar fits its pane to its content on its own, which would race the
+  # cases that check sizes; the cases about fitting turn it back on.
+  export ISTATUS_SIDEBAR_FIT=0
   tmux -S "$DIR/sock" -f /dev/null new-session -d -x 120 -y 40 'sleep 300'
   export TMUX="$DIR/sock,0,0"
   MAIN=$(tmux display-message -p '#{pane_id}')
@@ -37,9 +40,20 @@ teardown() {
 }
 trap teardown EXIT
 
-# float <subcommand> <pane> — run istatus-float.sh as the key binding does,
-# with the active pane as its argument.
-float() { "$SCRIPT" "$1" "$2" >/dev/null 2>&1 </dev/null; }
+# float <subcommand> <pane> [arg] — run istatus-float.sh as the key binding
+# does, with the active pane as its argument.
+float() { "$SCRIPT" "$@" >/dev/null 2>&1 </dev/null; }
+
+# wait_height <pane> <rows> — waits up to four seconds for the pane to reach
+# that height, for the sidebar's own refresh, which polls once a second.
+wait_height() {
+  local i
+  for i in $(seq 1 40); do
+    [[ "$(tmux display-message -p -t "$1" '#{pane_height}')" == "$2" ]] && return 0
+    sleep 0.1
+  done
+  return 0
+}
 
 # status_pane -> the id of the window's status pane, or nothing.
 status_pane() {
@@ -187,6 +201,101 @@ tmux kill-pane -t "$MAIN"
 float relayout "$window"
 assert_eq "$(tmux list-panes -t "$window" -F '#{pane_id}' | tr '\n' ' ')" "$other " \
   "relayout closes the status pane when its Claude pane has closed"
+teardown
+
+# ── fit sizes an expanded status pane to its content ─────────────────────────
+# The sidebar asks for the rows its content needs; the pane keeps its top and
+# right edge, so it grows and shrinks downward from its corner.
+setup
+float expand "$MAIN"
+fp=$(status_pane)
+float fit "$fp" 10
+assert_eq "$(geometry "$fp")" "1:$MAIN:2:118:10" \
+  "fit resizes an expanded status pane to the rows asked for, in place"
+teardown
+
+# ── fit never goes below three rows ──────────────────────────────────────────
+# Two rows or fewer is what the sidebar takes for a collapsed pane.
+setup
+float expand "$MAIN"
+fp=$(status_pane)
+float fit "$fp" 1
+assert_eq "$(tmux display-message -p -t "$fp" '#{pane_height}')" "3" \
+  "fit keeps an expanded status pane at three rows or more"
+teardown
+
+# ── fit never goes past two thirds of the Claude pane ────────────────────────
+# Beyond that the list scrolls. Two thirds of 40 rows is 26.
+setup
+float expand "$MAIN"
+fp=$(status_pane)
+float fit "$fp" 99
+assert_eq "$(tmux display-message -p -t "$fp" '#{pane_height}')" "26" \
+  "fit stops an expanded status pane at two thirds of its Claude pane"
+teardown
+
+# ── fit on a collapsed pane waits for the next expand ────────────────────────
+setup
+float toggle "$MAIN"
+fp=$(status_pane)
+float fit "$fp" 10
+collapsed=$(tmux display-message -p -t "$fp" '#{pane_height}')
+float expand "$MAIN"
+assert_eq "$collapsed:$(tmux display-message -p -t "$fp" '#{pane_height}')" "1:10" \
+  "fit leaves a collapsed status pane collapsed and the next expand uses the rows"
+teardown
+
+# ── relayout keeps a fitted status pane at its fitted height ─────────────────
+# Otherwise relayout would snap it back to two thirds, and the sidebar would
+# fit it again, on every layout change.
+setup
+float expand "$MAIN"
+fp=$(status_pane)
+float fit "$fp" 10
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+assert_eq "$(tmux display-message -p -t "$fp" '#{pane_height}')" "10" \
+  "relayout leaves a fitted status pane at its height"
+teardown
+
+# ── relayout fits the height again to a new Claude pane size ─────────────────
+setup
+float expand "$MAIN"
+fp=$(status_pane)
+float fit "$fp" 20
+tmux resize-window -x 120 -y 15
+float relayout "$(tmux display-message -p -t "$MAIN" '#{window_id}')"
+assert_eq "$(tmux display-message -p -t "$fp" '#{pane_height}')" "10" \
+  "relayout caps a fitted status pane at two thirds of a shrunken Claude pane"
+teardown
+
+# ── fit on a pane that is not a status pane does nothing ─────────────────────
+setup
+float fit "$MAIN" 10
+assert_eq "$(tmux display-message -p -t "$MAIN" '#{pane_height}'):$(count)" "40:0" \
+  "fit leaves an ordinary pane alone"
+teardown
+
+# ── the sidebar fits its own pane to its content ─────────────────────────────
+# End to end, with the real sidebar and a session seeded in its state dir.
+setup
+tmux set-environment -g ISTATUS_SIDEBAR_FIT 1
+mkdir -p "$CLAUDE_TMUX_ATTENTION_DIR/panes" "$CLAUDE_TMUX_ATTENTION_DIR/status"
+printf '%s' s1 > "$CLAUDE_TMUX_ATTENTION_DIR/panes/$MAIN.session_id"
+notices() {
+  jq -nc --argjson n "$1" '{summary: "short", items: [range($n) | {id: "n\(.)", kind: "notice", text: "item \(.)", state: "unread", priority: "normal", created_at: "2026-10-16T00:00:00Z"}]}' \
+    > "$CLAUDE_TMUX_ATTENTION_DIR/status/s1.json"
+}
+notices 1
+float expand "$MAIN"
+fp=$(status_pane)
+wait_height "$fp" 9
+small=$(tmux display-message -p -t "$fp" '#{pane_height}')
+notices 6
+wait_height "$fp" $(( small + 5 ))
+assert_eq "$(( $(tmux display-message -p -t "$fp" '#{pane_height}') - small ))" "5" \
+  "the sidebar grows its pane by a row for each line of content that arrives"
+assert_eq "$(( small < 26 ))" "1" \
+  "the sidebar sizes a short list well under the two-thirds cap"
 teardown
 
 # ── toggle leaves the keyboard with the Claude pane ──────────────────────────

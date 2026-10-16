@@ -39,6 +39,7 @@ import textwrap
 from typing import NamedTuple, Optional
 
 ISTATUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus.sh")
+FLOAT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus-float.sh")
 PRIORITY_RANK = {"high": 0, "low": 2}
 REFRESH_MS = 1000
 # A pane this short is a collapsed floating pane: it shows only the title bar.
@@ -104,6 +105,17 @@ def ordered(items: list) -> list:
     return sorted(items, key=key)
 
 
+def fit_request(want: int, requested: Optional[int], height: int) -> Optional[int]:
+    """The number of rows to ask istatus-float.sh for, or None to ask for
+    nothing. The content wants `want` rows; `requested` is what was last asked
+    for, so a pane that cannot grow that far (its cap is two thirds of the
+    Claude pane, past which the list scrolls) is not asked again for the same
+    content. A collapsed pane, `height` rows tall, asks for nothing."""
+    if height <= COLLAPSED_ROWS or want == requested:
+        return None
+    return want
+
+
 def command_for(key: str, item: dict, pane: str, istatus: str, done: bool = False):
     """The istatus command a key runs on an item, as (argv, None), or
     (None, message) when the key cannot act on it, or (None, None) when it has
@@ -166,6 +178,7 @@ class Sidebar:
         self.selections = {False: Selection(), True: Selection()}
         self.message = None
         self.top = 0
+        self.fit_requested = None
 
     @property
     def selection(self) -> Selection:
@@ -216,6 +229,8 @@ class Sidebar:
         # The footer wraps rather than truncates: a sidebar is narrow.
         hint = DONE_HINT if self.showing_done else HINT
         footer = wrap(self.message, width, "") if self.message else pack(hint, width)
+        self.fit(fit_request(len(lines) + len(item_lines) + len(footer),
+                             self.fit_requested, height))
         footer = footer[:max(height - 1, 1)]
         footer_attr = curses.color_pair(1) if self.message else curses.A_DIM
         body = height - len(lines) - len(footer)
@@ -228,6 +243,18 @@ class Sidebar:
         for y, text in enumerate(footer, start=height - len(footer)):
             screen.addnstr(y, 0, text, width - 1, footer_attr)
         screen.refresh()
+
+    def fit(self, rows: Optional[int]) -> None:
+        """Asks istatus-float.sh to resize this floating pane to `rows`. It
+        runs from the pane's own process, so it knows the pane by $TMUX_PANE; a
+        sidebar outside tmux, or in a tiled split (which the script ignores),
+        asks in vain. ISTATUS_SIDEBAR_FIT=0 turns it off."""
+        pane = os.environ.get("TMUX_PANE")
+        if rows is None or not pane:
+            return
+        self.fit_requested = rows
+        if os.environ.get("ISTATUS_SIDEBAR_FIT") != "0":
+            subprocess.run([FLOAT, "fit", pane, str(rows)], capture_output=True)
 
     def draw_collapsed(self, screen, view: View, width: int) -> None:
         """Only the title bar and its counts, for a collapsed floating pane.
