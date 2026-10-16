@@ -76,7 +76,8 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 
 ## Commit messages
 
-- **Explain *why*, not *what*** — the diff already shows what changed. Cite the spec / ADR / ticket that motivated it. Follow cbea.ms/git-commit conventions: imperative-mood subject, capitalized, no trailing period; wrap the body.
+- **Explain *why*, not *what*, in the subject as well as the body.** The diff already shows what changed, so a subject that restates it adds nothing. Name the purpose, or the problem the commit resolves: *"Skip relayout while the window is zoomed"* describes the code; *"Stop relayout failing when the selector zooms"* gives the reason. The body carries the context the diff can't: what was wrong, why this approach over the alternatives, and the spec / ADR / ticket that motivated it. Don't narrate how the code works.
+- **Follow cbea.ms/git-commit for the mechanics.** A blank line separates the subject from the body. The subject is imperative, capitalized, with no trailing period, and completes "If applied, this commit will ___." Wrap the body at 72 columns. `git commit -m` does not wrap, so break the lines by hand, or write the message to a file and use `git commit -F`.
 - **Subject is a hard 50-character limit, not a target.** Count it *before* committing (`git log` the subject through `wc -c` minus the newline, or just count) and shorten until it fits. Don't ship a 51+ subject and fix it after — "~50" has repeatedly drifted to 55–60; treat 50 as the ceiling.
 - **No PR numbers in commit messages** — refer to the substance (the concept), not the PR.
 - **Omit narration** — no slice numbers, refactor play-by-play, or process checklists in the body. State only what the diff can't convey.
