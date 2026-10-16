@@ -192,6 +192,46 @@ assert_eq "$(tmux display-message -p -t "$fp" '#{window_id}'):$(shape "$fp"):$(g
   "relayout moves the status pane, still expanded, into its pane's new window"
 teardown
 
+# ── relayout leaves a zoomed window alone and succeeds ───────────────────────
+# prefix s (choose-tree -Z) zooms the window while it is open. A zoomed window
+# reports its floating panes as tiled, so move-pane -X fails with "pane is not
+# floating"; the hook then exited 1 and tmux showed that over the pane. Zoom
+# changes the layout, so the hook runs again, and relayout does its work when
+# the window unzooms.
+setup
+other=$(tmux split-window -h -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float expand "$MAIN"
+float expand "$other"
+window=$(tmux display-message -p -t "$MAIN" '#{window_id}')
+tmux resize-pane -Z -t "$MAIN"
+"$SCRIPT" relayout "$window" >/dev/null 2>&1 </dev/null
+status=$?
+assert_eq "$status:$(tmux display-message -p -t "$MAIN" '#{window_zoomed_flag}')" "0:1" \
+  "relayout exits 0 and keeps the zoom when the window is zoomed"
+tmux resize-pane -Z -t "$MAIN"
+"$SCRIPT" relayout "$window" >/dev/null 2>&1 </dev/null
+assert_eq "$(tmux list-panes -t "$window" -F '#{pane_floating_flag}' | tr -d '\n')" "0011" \
+  "relayout still finds both status panes floating once the window unzooms"
+teardown
+
+# ── relayout exits 0 when a tmux step fails ──────────────────────────────────
+# The hook runs from tmux, which reports a non-zero exit over the pane. A pane
+# it cannot move is skipped, and the others still get their turn.
+setup
+other=$(tmux split-window -h -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')
+float expand "$MAIN"
+float expand "$other"
+window=$(tmux display-message -p -t "$MAIN" '#{window_id}')
+tmux resize-pane -x 30 -t "$MAIN"
+mkdir "$DIR/bin"
+real_tmux=$(command -v tmux)
+printf '#!/bin/bash\n[[ "$1" == move-pane ]] && { echo "pane is not floating" >&2; exit 1; }\nexec "%s" "$@"\n' \
+  "$real_tmux" > "$DIR/bin/tmux"
+chmod +x "$DIR/bin/tmux"
+PATH="$DIR/bin:$PATH" "$SCRIPT" relayout "$window" >/dev/null 2>&1 </dev/null
+assert_eq "$?" "0" "relayout exits 0 when moving a status pane fails"
+teardown
+
 # ── relayout closes a status pane whose Claude pane is gone ──────────────────
 setup
 other=$(tmux split-window -h -d -P -F '#{pane_id}' -t "$MAIN" 'sleep 300')

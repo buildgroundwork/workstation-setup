@@ -138,8 +138,14 @@ cmd_fit() {
 
 cmd_relayout() {
   local window="$1" status paired
+  # A zoomed window reports its floating panes as tiled, so they cannot be
+  # moved, and resizing one would unzoom the window. Zooming and unzooming both
+  # change the layout, so the hook runs again when the window unzooms.
+  [[ "$(tmux display-message -p -t "$window" '#{window_zoomed_flag}' 2>/dev/null)" == 1 ]] && return 0
   while read -r status paired; do
-    [[ -n "$paired" ]] && relayout_one "$status" "$paired" "$window"
+    # `|| true` also turns off `set -e` inside relayout_one: tmux reports a
+    # failing hook over the pane, so a pane that cannot be moved is skipped.
+    [[ -n "$paired" ]] && { relayout_one "$status" "$paired" "$window" || true; }
   done < <(tmux list-panes -t "$window" -F '#{pane_id} #{@istatus_paired}' 2>/dev/null)
   return 0
 }
