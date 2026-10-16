@@ -83,6 +83,17 @@
 #     backstop. Known limit: a background subagent that hits a permission
 #     prompt after its parent's turn has ended has that item cleared by the
 #     parent's NEXT Stop, while the prompt is still up.
+#
+#     Stop also nudges the session to keep its `istatus summary` current. It
+#     counts the turns since the summary last changed (nudge/<session_id>,
+#     kept outside the status file so counting creates none) and, on reaching
+#     ISTATUS_NUDGE_TURNS (default 5), prints JSON with additionalContext on
+#     stdout. Claude Code drops a Stop hook's plain stdout, but acts on that
+#     field by starting one more turn, so a nudge costs the session a turn;
+#     hence the interval, and the count starts over at each nudge and at each
+#     change of summary. A one-turn session (claude -p) never reaches it. It
+#     skips a Stop with stop_hook_active (the turn a nudge started, so a nudge
+#     cannot trigger itself) and one from a subagent (agent_id).
 
 set -euo pipefail
 
@@ -91,13 +102,17 @@ set -euo pipefail
 # exit 0 is injected into Claude's context for some events, so: send stdout
 # nowhere and force exit 0 on the way out. The work above still fails fast
 # under set -e; at worst a failure costs a missed item. stderr stays for
-# anyone running the script by hand.
-exec >/dev/null
+# anyone running the script by hand. The one thing written to stdout on
+# purpose is the stop nudge, through fd 3, which keeps the real stdout.
+exec 3>&1 >/dev/null
 trap 'exit 0' EXIT
 
 ATTENTION_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
 STATUS_DIR="$ATTENTION_DIR/status"
 PANES_DIR="$ATTENTION_DIR/panes"
+NUDGE_DIR="$ATTENTION_DIR/nudge"
+# Turns with an unchanged summary before the stop hook nudges for a new one.
+NUDGE_TURNS="${ISTATUS_NUDGE_TURNS:-5}"
 # Seconds to wait for the session lock before dropping the write.
 # ISTATUS_LOCK_TIMEOUT overrides it, for tests.
 LOCK_TIMEOUT="${ISTATUS_LOCK_TIMEOUT:-2}"
@@ -164,8 +179,13 @@ cmd_start() {
 }
 
 cmd_stop() {
-  local status_file
   read_payload
+  settle_stop
+  nudge_stale_summary
+}
+
+settle_stop() {
+  local status_file
 
   # Stop fires at the end of every turn in every session, so the checks run
   # before taking the lock: no status file, or neither a dispatched nor a
@@ -177,6 +197,46 @@ cmd_stop() {
   has_dispatched_item "$status_file" || has_blocking_item "$status_file" || return 0
   LOCK_FILE="$ATTENTION_DIR/status-${SESSION_ID}.lock"
   with_lock settle_stopped_session "$status_file"
+}
+
+# Counts this turn against the session's summary and, when it has sat for
+# NUDGE_TURNS turns, asks the session to refresh it (see the header). The count
+# file holds "<turns> <cksum of the summary>": a different summary restarts it,
+# and so does a nudge. Only this session's own Stop hooks write the file, one
+# at a time, so it takes no lock.
+nudge_stale_summary() {
+  local file="$NUDGE_DIR/$SESSION_ID" summary seen turns last
+  [[ "$(jq -r '.stop_hook_active // false' <<<"$PAYLOAD")" == true ]] && return 0
+  [[ -z "$(jq -r '.agent_id // empty' <<<"$PAYLOAD")" ]] || return 0
+
+  summary=$(session_summary)
+  seen=$(printf '%s' "$summary" | cksum | cut -d' ' -f1)
+  read -r turns last 2>/dev/null < "$file" || { turns=0; last=""; }
+  [[ "$last" == "$seen" ]] || turns=0
+  turns=$((turns + 1))
+
+  mkdir -p "$NUDGE_DIR"
+  if [[ "$turns" -lt "$NUDGE_TURNS" ]]; then
+    printf '%s %s\n' "$turns" "$seen" > "$file"
+    return 0
+  fi
+  printf '0 %s\n' "$seen" > "$file"
+  jq -nc --arg ctx "$(nudge_text "$summary" "$turns")" \
+    '{hookSpecificOutput: {hookEventName: "Stop", additionalContext: $ctx}}' >&3
+}
+
+# The session's current summary, empty when it has none or no status file.
+session_summary() {
+  jq -r '.summary // ""' "$STATUS_DIR/${SESSION_ID}.json" 2>/dev/null || true
+}
+
+nudge_text() {
+  local summary="$1" turns="$2"
+  if [[ -z "$summary" ]]; then
+    printf '%s' "istatus: this session's summary is empty, so the \"Working on:\" line in Adam's status sidebar shows nothing. If you have a task in hand, record it with istatus summary (one line on stdin). Do it quietly and do not restate your last reply."
+  else
+    printf '%s' "istatus: this session's summary has not changed in $turns turns and still reads: \"$summary\". If what you are working on has moved on, replace it with istatus summary (one line on stdin); if it is still accurate, do nothing. Do not restate your last reply."
+  fi
 }
 
 # Run by the hub, not by the target session, so TMUX_PANE here is the hub's

@@ -22,6 +22,9 @@ SEED_WITH_NOTICE='{"summary":"working on X","items":[{"id":"n1","kind":"notice",
 setup() {
   DIR="$(mktemp -d)"
   export CLAUDE_TMUX_ATTENTION_DIR="$DIR"
+  # A short nudge interval, so the cases need few turns. One case unsets it to
+  # check the default.
+  export ISTATUS_NUDGE_TURNS=3
 }
 teardown() { [[ -n "$DIR" && -d "$DIR" ]] && rm -rf "$DIR"; DIR=""; }
 trap teardown EXIT
@@ -75,6 +78,21 @@ stop() {
   local pane="$1" sid="$2"
   printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"Stop"}' "$sid" \
     | TMUX=fake TMUX_PANE="$pane" "$SCRIPT" stop
+}
+
+# stop_out <session_id> [extra payload fields] — feed a Stop payload for pane
+# %42 and print what the hook wrote to stdout. The extra fields are JSON
+# members with a leading comma, such as ',"stop_hook_active":true'.
+stop_out() {
+  printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"Stop"%s}' "$1" "${2:-}" \
+    | TMUX=fake TMUX_PANE=%42 "$SCRIPT" stop
+}
+
+# stops <n> <session_id> [extra payload fields] — n Stop payloads in a row;
+# prints everything they wrote to stdout, so it is empty when none nudged.
+stops() {
+  local n="$1" sid="$2" extra="${3:-}" i
+  for ((i = 0; i < n; i++)); do stop_out "$sid" "$extra"; done
 }
 
 # hold_lock <session_id> — take the session's lock in a background process and
@@ -490,6 +508,88 @@ add %42 sess-1 "Claude needs your permission to use Bash"
 complete_tool sess-1 Bash
 assert_eq "$(items_of sess-1 '[.items[].kind]')" '[]' \
   "a top-level tool completing clears a permission prompt"
+teardown
+
+# ── stop nudges the session to refresh its summary, now and then ─────────────
+# Stop's stdout is dropped unless it is JSON, and JSON with additionalContext
+# starts another turn for the model to act on it. So a nudge costs a turn, and
+# the hook asks for one only after a run of turns in which the summary did not
+# change. A session of one turn (claude -p) never gets there.
+setup
+assert_eq "$(stops 1 sess-1)" "" \
+  "stop says nothing on a session's first turn"
+teardown
+
+setup
+stops 2 sess-1 >/dev/null
+assert_eq "$(stop_out sess-1 | jq -r '.hookSpecificOutput | "\(.hookEventName) \(.additionalContext | contains("istatus summary"))"')" \
+  "Stop true" \
+  "stop asks for a summary update once the summary has sat for the interval"
+teardown
+
+setup
+stops 3 sess-1 >/dev/null
+assert_eq "$(stops 2 sess-1)" "" \
+  "stop stays quiet for a full interval after a nudge"
+teardown
+
+setup
+unset ISTATUS_NUDGE_TURNS
+assert_eq "$(stops 4 sess-1)" "" \
+  "stop waits more than four turns by default"
+assert_eq "$(stop_out sess-1 | jq -r '.hookSpecificOutput.hookEventName')" "Stop" \
+  "stop nudges on the fifth turn by default"
+teardown
+
+setup
+seed sess-1 '{"summary":"A","items":[]}'
+stops 2 sess-1 >/dev/null
+seed sess-1 '{"summary":"B","items":[]}'
+assert_eq "$(stop_out sess-1)" "" \
+  "a changed summary restarts the count"
+teardown
+
+setup
+stops 2 sess-1 >/dev/null
+assert_eq "$(stop_out sess-1 ',"stop_hook_active":true')" "" \
+  "stop never nudges the turn a nudge started"
+teardown
+
+setup
+stops 2 sess-1 ',"stop_hook_active":true' >/dev/null
+assert_eq "$(stop_out sess-1)" "" \
+  "a turn a nudge started does not count toward the next one"
+teardown
+
+setup
+stops 2 sess-1 >/dev/null
+assert_eq "$(stop_out sess-1 ',"agent_id":"a1"')" "" \
+  "stop never nudges a subagent"
+teardown
+
+setup
+stops 2 sess-1 >/dev/null
+assert_eq "$(stop_out sess-1 | jq -r '.hookSpecificOutput.additionalContext | contains("empty")')" "true" \
+  "the nudge for a session with no summary says it is empty"
+teardown
+
+setup
+seed sess-1 '{"summary":"working on X","items":[]}'
+stops 2 sess-1 >/dev/null
+assert_eq "$(stop_out sess-1 | jq -r '.hookSpecificOutput.additionalContext | contains("working on X")')" "true" \
+  "the nudge for a stale summary quotes it"
+teardown
+
+setup
+stops 3 sess-1 >/dev/null
+assert_eq "$(ls "$DIR/status" 2>/dev/null | wc -l | tr -d ' ')" "0" \
+  "counting turns does not create a status file"
+teardown
+
+setup
+add %42 sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(stop_out sess-1)" "" \
+  "stop settling a blocking item writes nothing to stdout"
 teardown
 
 echo "$PASS passed, $FAIL failed"
