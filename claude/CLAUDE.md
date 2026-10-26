@@ -33,6 +33,8 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 
 - **Title Notion documents as `<type of document> | <title>`.** Use a pipe, not a colon, for example "Research | small groups and auditable performance reviews" or "Proposal | small, autonomous review groups at Ode". The type prefix lets Adam tell reviews, proposals, and tech specs apart by scanning titles.
 
+- **Use American English** in anything I draft for Adam: American spelling (program, analyze, minimize, color, itemized) and American punctuation (commas and periods go inside closing quotation marks).
+
 ## Communication register (Slack, doc comments, PR replies)
 
 - **Don't open replies to peers with "Thanks [Name], that's helpful"** or similar personalized acknowledgments. It performs deferential relationship-management that isn't load-bearing — the substantive follow-up already signals collaboration. Default to a neutral acknowledgment ("Okay, that's helpful." / "Got it." / "Makes sense.") instead. Reserve "Thanks [Name]" for when the gratitude is the actual point (the person did real work, went out of their way).
