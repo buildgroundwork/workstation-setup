@@ -1,0 +1,20 @@
+name: ipc
+root: ~/workspace/ipc
+
+tmux_options: -2
+
+attach: false
+
+# The usual window set. Keep the claude window: the hub skill finds a session's
+# Claude pane by a window name containing "claude".
+windows:
+  - vim: vim
+  # A long-running command for a window, e.g. bundle exec rails s or bin/dev
+  - server:
+  - db:
+  - console:
+  - shell:
+  - shell2:
+  # INTER_SESSION_NAME gives the session a stable name on the inter-session
+  # bus, so other sessions can message it by name.
+  - claude: INTER_SESSION_NAME=ipc claude --continue
