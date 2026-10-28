@@ -35,4 +35,5 @@ tmuxinator start workstation
 # Company branches add a line here for each project, named after its config in
 # this directory (see project.yml.example):
 #   tmuxinator start my-service
+tmuxinator start ipc
 tmux attach
