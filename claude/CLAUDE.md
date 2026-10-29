@@ -35,6 +35,8 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 
 - **Use American English** in anything I draft for Adam: American spelling (program, analyze, minimize, color, itemized) and American punctuation (commas and periods go inside closing quotation marks).
 
+- **Write documents in their current state, not their history.** A reader sees only the document, not how it evolved, so don't include "changed after X," "rose from 3," "new," or "added" annotations, and don't explain why something changed. Revision history lives in the platform (Notion page history, Google Docs version history) or in the review loop's markers, not in the prose. State the current rating, decision, or fact and its reasoning.
+
 ## Communication register (Slack, doc comments, PR replies)
 
 - **Don't open replies to peers with "Thanks [Name], that's helpful"** or similar personalized acknowledgments. It performs deferential relationship-management that isn't load-bearing — the substantive follow-up already signals collaboration. Default to a neutral acknowledgment ("Okay, that's helpful." / "Got it." / "Makes sense.") instead. Reserve "Thanks [Name]" for when the gratitude is the actual point (the person did real work, went out of their way).
