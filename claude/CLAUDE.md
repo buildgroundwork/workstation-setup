@@ -127,6 +127,20 @@ The toolchain sections (Git, Ruby/RSpec/Sorbet) only apply when working in that 
 - During TDD, write the failing test directly without asking permission first (Adam reviews the file); production-code changes still warrant pre-alignment.
 - After GREEN, do the REFACTOR pass — explicitly scan for duplication, awkward shapes, naming — before moving on.
 
+## Databases
+
+Default to the Rails naming conventions (Adam considers them a good default in any stack), with UUIDv7 keys:
+
+- **Name tables in the plural, after the records they hold** (`annotations`, `call_parties`, `annotation_events`), not in the singular or after their mechanism (`annotation`, `outbox`). In a schema that already uses singular names, rename them all together rather than mixing the two styles.
+- **Every table has a primary key, a single column named `id`.** Not `<record>_id` and not a composite. Where a natural key has to be unique (a pair such as version and type), make it a unique constraint beside `id`, not the primary key.
+- **Primary keys are UUIDv7**, a departure from Rails' integer default: time-ordered, so they index well, and safe to generate anywhere. Where the database or language has no native generator, add a small tested one rather than falling back to UUIDv4 or serials. (Postgres gets `uuidv7()` in 18, Python gets `uuid.uuid7()` in 3.14.)
+- **Foreign keys are `<singular referenced table>_id`** (`call_id` references `calls.id`, `definition_id` references `annotation_definitions.id`). Join to a row through its `id`, not through a natural key copied into the referencing table.
+- **In a resource's JSON representation, its own identifier is `id`**, and references to other resources keep their `<name>_id` names. An annotation's JSON has `id`, `call_id`, and `leg_id`, never `annotation_id`.
+
+## APIs
+
+- **No version strings in URLs** (`/v1/calls` is wrong; `/calls` is right). In REST a URL identifies a resource, and the resource doesn't change from one API version to the next; only its representation does. So the identifier mustn't change either. This is Roy Fielding's position, stated repeatedly, not a style choice. When an API needs versioning, version the representation in HTTP: content negotiation (a versioned media type in `Accept` and `Content-Type`) or a request header. Common practice gets REST wrong more often than right, so check REST claims against Fielding's dissertation and blog posts and the HTTP standard (RFC 9110), not against popular API guides.
+
 ## Claude Code harness
 
 - **Put personal skills in `~/.claude/skills/`, never in a repo's `.claude/skills/`.** Some marketplace plugins manage a repo's `.claude/skills/` and delete any skill not in their manifest, and a personal skill doesn't belong in a shared repo anyway.
