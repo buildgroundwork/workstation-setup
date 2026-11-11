@@ -208,5 +208,33 @@
   "tui": "default",
   "skipWorkflowUsageWarning": true,
   "theme": "light-daltonized",
-  "editorMode": "vim"
+  "editorMode": "vim",
+  "autoMode": {
+    "environment": [
+      "### Org-wide",
+      "**Organization**: None configured",
+      "**Cloud provider(s)**: None configured",
+      "**Repository visibility**: PUBLIC — buildgroundwork/workstation-setup (github.com:buildgroundwork/workstation-setup.git) is a public repo; any push here is publishing",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: None configured",
+      "**Default / protected branches**: main (default); no rulesets listed, no protected branches listed via gh",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: None configured",
+      "**Host containment**: None configured — assume Claude Code runs on an ordinary developer machine with open internet",
+      "**Source control**: The trusted repo (buildgroundwork/workstation-setup) and its origin remote only (no additional orgs configured)",
+      "**Trusted internal domains**: None configured",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: None configured",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: any file or store holding personal data, confidential business data, credentials, regulated data, or similarly sensitive material; preserve exact handles when known and share only with audiences cleared at the [named+specifics] bar",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development (workstation/dotfiles setup and tooling for Adam Milligan)",
+      "**Trusted repo**: /Users/adam/.workstation (buildgroundwork/workstation-setup, origin github.com:buildgroundwork/workstation-setup.git) — PUBLIC: only this repo's own work belongs here; content ported in from elsewhere is not cleared by this repo's visibility, and secrets/sensitive data are never cleared into it regardless of visibility",
+      "**Org-specific CLIs**: None configured — routine inter-session tooling observed in this repo's transcripts (istatus, isend, ilist) are personal Claude Code harness wrappers, not org CLIs"
+    ]
+  }
 }
