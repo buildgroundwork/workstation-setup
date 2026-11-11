@@ -59,9 +59,20 @@ Brief it with:
 
 Pass it findings as data. Don't pass your own conclusions about what is confidential; the writer decides.
 
-## Step 5: Report
+## Step 5: Verify the write
 
-Tell the user, briefly, from the writer's report: build or refresh; sections added or changed; notable new entries; entries reduced to a pointer; conflicts recorded; sources unreachable and what that hides. Link the map. Don't paste the map into chat.
+The writer has no shell and can't always re-read a large map: `notion-fetch` saves a long page to a file as one line. You verify. Fetch the map before Step 4 in refresh mode and after the writer returns, and extract the text from each saved file with `jq`. Check the shape first (`.text` at the top level, or an array whose first element's `.text` is itself JSON). Then confirm:
+
+- every section heading from before is still there, and none the writer was told not to touch has changed;
+- the new map log entry is present;
+- the page's size before and after, which you measure (the writer reports none it didn't measure);
+- none of the writer's reported pointer-only entries has its substance inline, by searching for the specific terms you know were confidential.
+
+If a check fails, tell the user what you found instead of reporting success.
+
+## Step 6: Report
+
+Tell the user, briefly, from the writer's report and your verification: build or refresh; sections added or changed; notable new entries; entries reduced to a pointer; conflicts recorded; stale candidates the writer left alone; the page's size before and after; sources unreachable and what that hides. Link the map. Don't paste the map into chat.
 
 ## Gotchas
 
