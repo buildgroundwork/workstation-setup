@@ -96,6 +96,8 @@ ln -sf $DIR/claude/CLAUDE.md ~/.claude/CLAUDE.md
 ln -sfn $DIR/claude/skills ~/.claude/skills
 # Personal hooks (e.g. the sed/cat/head/tail-viewer block), same pattern as skills.
 ln -sfn $DIR/claude/hooks ~/.claude/hooks
+# Personal agents (e.g. project-map-writer), same pattern as skills.
+ln -sfn $DIR/claude/agents ~/.claude/agents
 # settings.json is shared config; the secret-bearing env stays in the
 # untracked settings.local.json alongside it.
 ln -sf $DIR/claude/settings.json ~/.claude/settings.json
