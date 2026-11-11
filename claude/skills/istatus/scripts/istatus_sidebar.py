@@ -234,7 +234,7 @@ class Sidebar:
         footer = footer[:max(height - 1, 1)]
         footer_attr = curses.color_pair(1) if self.message else curses.A_DIM
         body = height - len(lines) - len(footer)
-        self.scroll(selected, body)
+        self.scroll(selected, body, len(item_lines))
         lines += item_lines[self.top:self.top + max(body, 0)]
         # The full width is safe above the footer; only the bottom-right cell
         # cannot be written without curses raising.
@@ -304,8 +304,10 @@ class Sidebar:
                 selected = (start, len(lines))
         return lines, selected
 
-    def scroll(self, selected, body: int) -> None:
-        """Keeps the selected item on screen."""
+    def scroll(self, selected, body: int, total: int) -> None:
+        """Keeps the selected item on screen, and the list no further down than
+        its last line at the bottom of the pane: a pane that grew since the
+        last draw, or a shorter list, shows items from the top again."""
         if selected is None or body <= 0:
             self.top = 0
             return
@@ -314,6 +316,7 @@ class Sidebar:
             self.top = start
         elif end > self.top + body:
             self.top = max(start, end - body) if end - start <= body else start
+        self.top = min(self.top, max(total - body, 0))
 
 
 def title_bar(pane: str, items: list, width: int) -> str:

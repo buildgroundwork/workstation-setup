@@ -32,6 +32,31 @@ def blocking(id, created_at="2026-01-01T00:00:00Z"):
             "state": "unread", "created_at": created_at}
 
 
+class ScrollTest(unittest.TestCase):
+    """Which line the list starts at, for a pane that shows `body` lines."""
+
+    def scrolled(self, top, selected, body, total):
+        view = sidebar.Sidebar("%9", "/nonexistent")
+        view.top = top
+        view.scroll(selected, body, total)
+        return view.top
+
+    def test_a_list_that_fits_starts_at_its_first_line(self):
+        self.assertEqual(self.scrolled(top=5, selected=(5, 7), body=10, total=7), 0)
+
+    def test_a_selection_below_the_pane_scrolls_into_view(self):
+        self.assertEqual(self.scrolled(top=0, selected=(18, 20), body=10, total=30), 18)
+
+    def test_a_selection_above_the_pane_scrolls_into_view(self):
+        self.assertEqual(self.scrolled(top=12, selected=(3, 5), body=10, total=30), 3)
+
+    def test_a_pane_taller_than_the_remaining_lines_shows_them_from_the_end(self):
+        self.assertEqual(self.scrolled(top=25, selected=(26, 28), body=10, total=30), 20)
+
+    def test_with_nothing_selected_the_list_starts_at_its_first_line(self):
+        self.assertEqual(self.scrolled(top=4, selected=None, body=10, total=0), 0)
+
+
 class OrderedTest(unittest.TestCase):
     """The same order istatus resolve's [N] ordinals use."""
 
