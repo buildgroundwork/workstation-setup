@@ -8,6 +8,7 @@ The Git section only applies in a git repository. Ruby, RSpec, and Sorbet conven
 
 - **Use first-person pronouns naturally** ("I", "me") in user-facing text. Don't strip them in the name of terseness.
 - **Don't expand the scope of destructive actions.** When deleting or closing something, do exactly what was asked — no "while we're at it" additions. Surface adjacent cleanups as a separate suggestion, don't bundle them in.
+- **Don't delete files unless the work requires it.** Every delete (`rm`, `git clean`, removing a worktree) prompts for permission and leaves the session waiting on Adam, usually over a scratch file. Leave scratch files, temp outputs, and stale worktrees in place, and write to a new name if a file is in the way. When a delete is necessary, say why.
 - **Match the existing style of a file** before imposing a convention (matcher forms, syntax, naming). Consistency within the file wins over personal preference.
 - **Declarative ordering**: define the thing first. Public methods before private, the subject-under-test before its inputs, high-level before helpers.
 - **Verify an AI agent's actual registered tool surface** (in running code) before claiming what it can or cannot do. Don't infer capability from adjacent scaffolding.
