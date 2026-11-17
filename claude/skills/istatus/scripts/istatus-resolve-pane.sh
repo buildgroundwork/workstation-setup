@@ -40,4 +40,10 @@ TARGET_PANE="${1:?usage: istatus-resolve-pane.sh <tmux-pane-id>}"
 POINTER_FILE="$PANES_DIR/${TARGET_PANE}.session_id"
 [[ -f "$POINTER_FILE" ]] || exit 1
 
+# tmux reuses pane ids, so a pointer older than the pane's process names a
+# session from an earlier pane: unresolved.
+if "$(dirname "${BASH_SOURCE[0]}")/istatus-pane-start.sh" stale "$TARGET_PANE"; then
+  exit 1
+fi
+
 cat "$POINTER_FILE"

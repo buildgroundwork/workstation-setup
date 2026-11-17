@@ -289,6 +289,46 @@ assert_eq "$(list_of '[.[] | {session_id, pane}]')" \
   "list shows a session named by two live panes once, at the first listed"
 teardown
 
+# ── tmux reuses a pane id: the old pointer must not place a session ─────────
+# A pointer written before the pane's process started belongs to an earlier
+# pane that had the same id, e.g. before a tmux restart. The fourth field of a
+# live-pane line is the pane's start time (epoch seconds); a pointer is stale
+# when it is older than that. A line with no fourth field has no start time to
+# compare, so its pointer counts.
+NOW=$(date +%s)
+
+# occupy_at <pane> <session_id> <epoch> — a pointer last written at <epoch>.
+occupy_at() {
+  occupy "$1" "$2"
+  touch -t "$(date -r "$3" +%Y%m%d%H%M.%S)" "$DIR/panes/$1.session_id"
+}
+
+setup
+seed sess-old '{"summary":"s","items":[]}'
+occupy_at %163 sess-old $((NOW - 1000))
+export ISTATUS_TMUX_PANES=$'%163\toms-stack\t1\t'"$((NOW - 10))"
+assert_eq "$(list_of '[.[].session_id]')" '[]' \
+  "list ignores a pointer older than the pane that reused its id"
+teardown
+
+setup
+seed sess-new '{"summary":"s","items":[]}'
+occupy_at %163 sess-new $((NOW - 5))
+export ISTATUS_TMUX_PANES=$'%163\tproj\t1\t'"$((NOW - 1000))"
+assert_eq "$(list_of '[.[].session_id]')" '["sess-new"]' \
+  "list keeps a pointer written after its pane started"
+teardown
+
+setup
+seed sess-old '{"summary":"s","items":[]}'
+occupy_at %163 sess-old $((NOW - 1000))
+seed sess-new '{"summary":"s","items":[]}'
+occupy_at %164 sess-new $((NOW - 5))
+export ISTATUS_TMUX_PANES=$'%163\tproj\t1\t'"$((NOW - 10))"$'\n%164\tproj\t2\t'"$((NOW - 1000))"
+assert_eq "$(list_of '[.[].session_id]')" '["sess-new"]' \
+  "list drops only the stale pointer when stale and fresh panes are both live"
+teardown
+
 # ── every status file is malformed ───────────────────────────────────────────
 setup
 seed sess-bad '{not json'

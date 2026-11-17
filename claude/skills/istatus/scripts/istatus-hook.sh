@@ -296,11 +296,16 @@ update_pane_session() {
 }
 
 # The session id that the pane's occupancy pointer names. Fails when the pane
-# is empty or has no pointer, so callers treat "nobody known there" as a no-op.
+# is empty or has no pointer, or the pointer is older than the pane (tmux
+# reuses pane ids, so it names a session from an earlier pane), so callers
+# treat "nobody known there" as a no-op.
 session_in_pane() {
   local pane="$1" pointer sid
   pointer="$PANES_DIR/${pane}.session_id"
   [[ -n "$pane" && -f "$pointer" ]] || return 1
+  if "$(dirname "${BASH_SOURCE[0]}")/istatus-pane-start.sh" stale "$pane"; then
+    return 1
+  fi
   sid=$(<"$pointer")
   [[ -n "$sid" ]] || return 1
   printf '%s' "$sid"

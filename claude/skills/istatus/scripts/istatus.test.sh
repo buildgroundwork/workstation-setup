@@ -176,6 +176,21 @@ assert_eq "$(refusal "no session" --pane %77 defer --all)" "refused" \
   "--pane fails for a pane no session is recorded in"
 teardown
 
+# ── --pane ignores a pointer older than the pane that reused its id ─────────
+# tmux reuses pane ids, so a pointer written before the pane's process started
+# names a session from an earlier pane. ISTATUS_TMUX_PANES stands in for tmux
+# with the pane's start epoch as its fourth field.
+setup
+seed sess-2 "$SEED_MIXED"
+point %9 sess-2
+touch -t "$(date -r $(($(date +%s) - 1000)) +%Y%m%d%H%M.%S)" "$DIR/panes/%9.session_id"
+export ISTATUS_TMUX_PANES=$'%9\tproj\t1\t'"$(($(date +%s) - 10))"
+assert_eq "$(refusal "predates" --pane %9 resolve n1):$(state_of sess-2 '[.items[].id] | length')" \
+  "refused:3" \
+  "--pane refuses a pointer older than its pane and leaves the items alone"
+unset ISTATUS_TMUX_PANES
+teardown
+
 # ── --pane does not create a status file for the target session ─────────────
 setup
 point %9 sess-2

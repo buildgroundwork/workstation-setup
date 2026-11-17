@@ -22,21 +22,27 @@
 #     `istatus decide` would otherwise be invisible. A pane taken over by
 #     another session, as after /resume, drops the old session's file, since
 #     no pointer names it any more. If two live panes name one session it is
-#     listed once, at the first pane listed.
+#     listed once, at the first pane listed. A pointer older than its pane's
+#     process is ignored: tmux reuses pane ids, so it dates from an earlier
+#     pane (see istatus-pane-start.sh).
 #     session_id comes from the file name; the file has no such field.
 #     tmux_window is a string, as tmux prints it. With no status files it
 #     prints [] and exits 0.
 #
 # Live panes come from ONE `tmux list-panes -a` call, tab-separated because a
-# session name can contain spaces. For tests only, ISTATUS_TMUX_PANES holds
-# those lines and is used in place of tmux, so liveness stays under test. When
+# session name can contain spaces, plus each pane's start time from
+# istatus-pane-start.sh. For tests only, ISTATUS_TMUX_PANES holds those lines,
+# a fourth field being the start epoch, and is used in place of tmux, so
+# liveness stays under test. When
 # it is set but empty there are no live panes; it never falls back to tmux.
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ATTENTION_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
 STATUS_DIR="$ATTENTION_DIR/status"
 PANES_DIR="$ATTENTION_DIR/panes"
+POINTER_SLACK=2 # seconds, as in istatus-pane-start.sh
 
 cmd_list() {
   local files panes occupants rows
@@ -137,28 +143,40 @@ parsable_files() {
   done
 }
 
-# The live panes, one "pane<TAB>session<TAB>window" line each. A tmux failure
-# (no server running) means no live panes.
+# The live panes, one "pane<TAB>session<TAB>window<TAB>start" line each, where
+# start is the epoch second the pane's process started (empty when unknown). A
+# tmux failure (no server running) means no live panes.
 live_panes() {
   if [[ -n "${ISTATUS_TMUX_PANES+x}" ]]; then
     printf '%s\n' "$ISTATUS_TMUX_PANES"
   else
-    tmux list-panes -a -F $'#{pane_id}\t#{session_name}\t#{window_index}' 2>/dev/null || true
+    local starts
+    starts=$("$SCRIPT_DIR/istatus-pane-start.sh" starts)
+    tmux list-panes -a -F $'#{pane_id}\t#{session_name}\t#{window_index}' 2>/dev/null \
+      | awk -F'\t' -v OFS='\t' 'NR == FNR { start[$1] = $2; next } { print $1, $2, $3, start[$1] }' \
+          <(printf '%s\n' "$starts") - \
+      || true
   fi
 }
 
 # Who holds each live pane, one "pane<TAB>session_id" line per live pane that
-# has an occupancy pointer. There are far fewer live panes than status files.
-# $1 is the live-pane listing.
+# has a current occupancy pointer. There are far fewer live panes than status
+# files. $1 is the live-pane listing. tmux reuses pane ids, so a pointer older
+# than the pane's process dates from an earlier pane with that id, and names
+# nobody; with no start time for the pane, the pointer counts.
 pane_occupants() {
-  local pane pointer
-  while IFS=$'\t' read -r pane _; do
+  local pane start pointer
+  while IFS=$'\t' read -r pane _ _ start; do
     pointer="$PANES_DIR/${pane}.session_id"
-    if [[ -n "$pane" && -f "$pointer" ]]; then
-      printf '%s\t%s\n' "$pane" "$(<"$pointer")"
+    [[ -n "$pane" && -f "$pointer" ]] || continue
+    if [[ -n "$start" ]] && (( $(file_mtime "$pointer") + POINTER_SLACK < start )); then
+      continue
     fi
+    printf '%s\t%s\n' "$pane" "$(<"$pointer")"
   done <<<"$1"
 }
+
+file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
 
 case "${1:-}" in
   list) cmd_list ;;

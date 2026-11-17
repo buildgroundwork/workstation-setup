@@ -67,6 +67,8 @@
 #   (panes/<pane>.session_id) alone.
 #   Other files in the same directory: panes/<pane>.session_id (which session
 #   occupies a pane), heartbeat/<session_id> (touched by every hook event).
+#   A pointer older than its pane's process is stale and names nobody: tmux
+#   reuses pane ids, so it was left by an earlier pane (istatus-pane-start.sh).
 #
 # session_id is $CLAUDE_CODE_SESSION_ID — the Claude session UUID, NOT the
 # inter-session bus name. A bus name survives a `/resume` into a different
@@ -176,6 +178,11 @@ if [[ -n "$TARGET_PANE" ]]; then
   sid=""
   [[ -f "$pointer" ]] && sid=$(<"$pointer")
   [[ -n "$sid" ]] || die "no session recorded for pane $TARGET_PANE"
+  # tmux reuses pane ids: a pointer older than the pane's process names a
+  # session from an earlier pane.
+  if "$(dirname "${BASH_SOURCE[0]}")/istatus-pane-start.sh" stale "$TARGET_PANE"; then
+    die "the session recorded for pane $TARGET_PANE predates the pane (tmux reused its id)"
+  fi
 else
   sid="${CLAUDE_CODE_SESSION_ID:-}"
   [[ -n "$sid" ]] \

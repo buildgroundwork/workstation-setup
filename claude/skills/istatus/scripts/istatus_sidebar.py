@@ -40,6 +40,7 @@ from typing import NamedTuple, Optional
 
 ISTATUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus.sh")
 FLOAT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus-float.sh")
+PANE_START = os.path.join(os.path.dirname(os.path.abspath(__file__)), "istatus-pane-start.sh")
 PRIORITY_RANK = {"high": 0, "low": 2}
 REFRESH_MS = 1000
 # A pane this short is a collapsed floating pane: it shows only the title bar.
@@ -75,13 +76,21 @@ def state_root() -> str:
         "~/.claude-tmux-attention")
 
 
+def pointer_is_stale(root: str, pane: str) -> bool:
+    """Whether the pane's pointer is older than the pane. tmux reuses pane ids,
+    so such a pointer names a session from an earlier pane."""
+    env = dict(os.environ, CLAUDE_TMUX_ATTENTION_DIR=root)
+    return subprocess.run([PANE_START, "stale", pane], env=env,
+                          capture_output=True).returncode == 0
+
+
 def load(root: str, pane: str) -> View:
     try:
         with open(os.path.join(root, "panes", f"{pane}.session_id")) as f:
             session_id = f.read().strip()
     except OSError:
         session_id = ""
-    if not session_id:
+    if not session_id or pointer_is_stale(root, pane):
         return View(problem="no session resolved for this pane yet")
     try:
         with open(os.path.join(root, "status", f"{session_id}.json")) as f:

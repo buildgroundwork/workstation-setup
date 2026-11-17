@@ -15,7 +15,9 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -222,9 +224,18 @@ class LoadTest(unittest.TestCase):
         self.root = self.dir.name
         os.makedirs(os.path.join(self.root, "status"))
         os.makedirs(os.path.join(self.root, "panes"))
+        # No live panes unless a test says so, so none reads the real tmux.
+        self.with_live_panes("")
 
     def tearDown(self):
         self.dir.cleanup()
+
+    def with_live_panes(self, lines):
+        # Stands in for tmux, as ISTATUS_TMUX_PANES does for the shell scripts:
+        # pane, session, window and the pane's start epoch, tab-separated.
+        patcher = mock.patch.dict(os.environ, {"ISTATUS_TMUX_PANES": lines})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def seed(self, session_id, state, pane="%9"):
         with open(os.path.join(self.root, "status", f"{session_id}.json"), "w") as f:
@@ -235,6 +246,21 @@ class LoadTest(unittest.TestCase):
     def test_a_pane_with_no_session_says_so(self):
         self.assertEqual(sidebar.load(self.root, "%9").problem,
                          "no session resolved for this pane yet")
+
+    def test_a_pointer_older_than_its_pane_names_no_session(self):
+        # tmux reuses pane ids: a pointer written before the pane's process
+        # started belongs to an earlier pane.
+        self.seed("sess-1", {"summary": "working", "items": [notice("n1")]})
+        pointer = os.path.join(self.root, "panes", "%9.session_id")
+        os.utime(pointer, (time.time() - 1000, time.time() - 1000))
+        self.with_live_panes(f"%9\tproj\t1\t{int(time.time()) - 10}")
+        self.assertEqual(sidebar.load(self.root, "%9").problem,
+                         "no session resolved for this pane yet")
+
+    def test_a_pointer_written_after_its_pane_started_loads(self):
+        self.seed("sess-1", {"summary": "working", "items": [notice("n1")]})
+        self.with_live_panes(f"%9\tproj\t1\t{int(time.time()) - 1000}")
+        self.assertEqual(sidebar.load(self.root, "%9").summary, "working")
 
     def test_a_session_with_no_status_file_says_so(self):
         with open(os.path.join(self.root, "panes", "%9.session_id"), "w") as f:

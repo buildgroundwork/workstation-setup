@@ -481,6 +481,23 @@ assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
   "viewed marks a ready notice read and leaves a decide notice unread"
 teardown
 
+# ── a pointer older than its pane names nobody ───────────────────────────────
+# tmux reuses pane ids, so a pointer written before the pane's process started
+# belongs to an earlier pane. Looking at the pane must not touch that session's
+# notices. ISTATUS_TMUX_PANES stands in for tmux, with the pane's start epoch
+# as its fourth field.
+setup
+start %50 sess-2
+seed sess-2 "$(jq -c '.items += [{"id":"r1","kind":"notice","text":"done task","source":"hub.ready","state":"unread","priority":"normal","created_at":"2026-10-06T00:00:00Z"}]' <<<"$SEED_WITH_NOTICE")"
+touch -t "$(date -r $(($(date +%s) - 1000)) +%Y%m%d%H%M.%S)" "$DIR/panes/%50.session_id"
+export ISTATUS_TMUX_PANES=$'%50\tproj\t1\t'"$(($(date +%s) - 10))"
+viewed %50
+unset ISTATUS_TMUX_PANES
+assert_eq "$(items_of sess-2 '[.items[] | {source, state}]')" \
+  '[{"source":null,"state":"unread"},{"source":"hub.ready","state":"unread"}]' \
+  "viewed leaves the notices of a session whose pointer predates the pane"
+teardown
+
 # ── reading a result back consumes the finished dispatch and nothing else ────
 # Looking at a pane marks the ready notice read, but the hub has not read the
 # result back until it captures the pane. That is what ends the dispatch.
