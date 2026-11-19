@@ -64,6 +64,7 @@ The Git section only applies in a git repository. Ruby, RSpec, and Sorbet conven
 - **No PR numbers in commit messages** — refer to the substance, not the PR.
 - **Omit narration** — no slice numbers, refactor play-by-play, or process checklists in the body. State only what the diff can't convey.
 - **Each commit is minimal, cohesive, and complete, and includes tests for what it changes.** One logical change, nothing half-done, independently green. Behavior changes come with the test that pins them down; a pure rename or a documentation fix can go without one.
+- **A commit updates the docs it makes stale.** When a commit changes something a README or CLAUDE.md describes (a command, flag, path, default, port, setup step, or known limit), the same commit updates that doc. Before calling a PR ready, read the README and CLAUDE.md files under the directories it touches, plus the root ones, and say in the PR body which were updated or confirmed.
 
 ## TDD discipline
 
