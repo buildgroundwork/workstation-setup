@@ -152,6 +152,25 @@
             "command": "~/.claude/skills/istatus/scripts/istatus-hook.sh start"
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/compact-handoff.sh inject"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/compact-handoff.sh pre"
+          }
+        ]
       }
     ],
     "SessionEnd": [
