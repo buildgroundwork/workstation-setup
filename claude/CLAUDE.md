@@ -52,6 +52,7 @@ The Git section only applies in a git repository. Ruby, RSpec, and Sorbet conven
 - **Interactive rebases are Adam's to run.** Create fixup commits, but let him run the `rebase -i` himself rather than automating it.
 - **Before force-pushing, `git fetch` and check the remote tip** — the remote may have moved.
 - **Replant branches with `git rebase --onto`**, not reset + cherry-pick.
+- **Before removing a git worktree, list its ignored files** (`git status --ignored`). `git worktree remove` without `--force` refuses only on modified or untracked files, and deletes ignored ones (build output, run directories) along with the worktree. Move anything worth keeping out first.
 - **After resolving merge/cherry-pick conflicts, `git reset HEAD <file>`** (not `git add`) so the resolution can be reviewed with `git add -p`.
 - **Cherry-pick** with `--continue --no-edit` to preserve authorship, then `git commit --amend` if the message needs revising.
 - **Don't reset or restage the index mid-session** — Adam runs `git add -p` / interactive staging in parallel. A populated or partially-staged (`MM`) index is likely *his* deliberate staging, not a mess to clean up. Only stage/commit the specific files you created or were asked to handle; never broad-reset files you didn't stage. If unsure whose staging it is, ask.
