@@ -218,7 +218,8 @@
     "ruby-lsp@claude-plugins-official": true,
     "inter-session@inter-session": true,
     "ode-laptop@ode-bootstrap": true,
-    "ode-onboard@ode-bootstrap": true
+    "ode-onboard@ode-bootstrap": true,
+    "handoff@fractional-marketplace": true
   },
   "extraKnownMarketplaces": {
     "inter-session": {
@@ -232,6 +233,13 @@
         "source": "directory",
         "path": "/Users/adam/.claude/ode-bootstrap-marketplace"
       }
+    },
+    "fractional-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "ode-internal/plugin-marketplace"
+      },
+      "autoUpdate": true
     }
   },
   "alwaysThinkingEnabled": false,
