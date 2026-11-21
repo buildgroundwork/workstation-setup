@@ -36,4 +36,6 @@ tmuxinator start workstation
 # this directory (see project.yml.example):
 #   tmuxinator start my-service
 tmuxinator start ipc
+tmuxinator start rubber-duck-bot
+tmuxinator start ode-deck
 tmux attach
