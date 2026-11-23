@@ -50,7 +50,7 @@ The Git section only applies in a git repository. Ruby, RSpec, and Sorbet conven
 - **`git config` values go `--global`**, not repo-local — Adam wants one consistent identity across all repos.
 - **Don't use `git -C <path>`** when the shell is already in the target repo; it obscures the working directory.
 - **Don't run any git command mid-rebase** (even read-only ones) while Adam is interactively rebasing — wait for explicit confirmation that the rebase is done.
-- **Interactive rebases are Adam's to run.** Create fixup commits, but let him run the `rebase -i` himself rather than automating it.
+- **Fold fixups yourself before pushing; never push a fixup.** Make `git commit --fixup` commits locally, then fold them non-interactively (`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`) before any push, including a push to a PR branch in review. Hand Adam an interactive rebase only when its interactive part is too complex to do reliably without him (reordering or splitting commits across conflicts, say), and say why.
 - **Before force-pushing, `git fetch` and check the remote tip** — the remote may have moved.
 - **Replant branches with `git rebase --onto`**, not reset + cherry-pick.
 - **Before removing a git worktree, list its ignored files** (`git status --ignored`). `git worktree remove` without `--force` refuses only on modified or untracked files, and deletes ignored ones (build output, run directories) along with the worktree. Move anything worth keeping out first.
