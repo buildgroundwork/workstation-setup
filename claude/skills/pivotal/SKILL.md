@@ -45,14 +45,16 @@ navigator/driver pairs run in parallel under it.
   conflict it can't resolve that way. The anchor is the only session with the whole
   picture across its pairs, and keeping that picture is its job. (Name is from
   Pivotal Labs.)
-- **Navigator** — spawned, bus name `<repo>-pair-N-navigator`, model opus. Holds THIS
+- **Navigator** — spawned, bus name `<repo>-pair-N-navigator`, model set by the
+  assignment's tier (see Model tiers). Holds THIS
   step's context only. Within-step strategy; actively reviews and CHALLENGES the
   driver's work as it's written (hunts the missing test case, the dropped edge). Never
   touches the working tree — directs and reviews; the driver acts. Verifying and
   staying in your seat can pull in opposite directions: a navigator reads files,
   diffs, and logs freely to verify independently, but does not run tools against the
   tree to do it — that crosses into execution, which is the driver's alone.
-- **Driver** — spawned, bus name `<repo>-pair-N-driver`, model sonnet. The ONLY session
+- **Driver** — spawned, bus name `<repo>-pair-N-driver`, model set by the
+  assignment's tier (see Model tiers). The ONLY session
   that writes/runs/commits. Tactical, immediate-problem only. Pushes back on the
   navigator's direction when it smells wrong (over-design, not-the-simplest-thing).
   Holds only what the navigator hands it per task — deliberately lean.
@@ -226,6 +228,39 @@ driver needs more, it asks. This context separation holds per pair, and holds ac
 pairs too: a pair only gets the slice relevant to its own step, not the whole
 backlog. It's a core part of the value, not incidental.
 
+## Model tiers
+
+The anchor picks the pair's models per assignment and records the tier in the
+assignment brief. Weigh four things: how many modules the work touches, whether a
+shared rule changes, whether it needs a design decision, and what a mistake costs.
+
+| Tier | Work | Navigator | Driver |
+|---|---|---|---|
+| simple | mechanical changes, docs, rebases, backfills | sonnet | haiku |
+| moderate | scoped changes that need real review | opus | haiku |
+| complex | cross-cutting core changes, design-heavy rules | opus | sonnet |
+
+A Haiku driver has done well on scoped process work and less well on consistency
+across files, so a change that spans files leans toward a higher tier. The navigator
+may ask the anchor to change the tier, with a reason; the anchor decides.
+
+Switch models between assignments. Escalate mid-assignment only when the driver is
+stuck or review exposes design work the tier didn't anticipate. A switch relaunches
+the pair with `--resume <uuid> --model <new>`. The conversation carries over (verified:
+a session created on haiku and resumed on sonnet kept its history and answered as
+sonnet), and the first turn pays for a cold prompt cache.
+
+**How a pair ends for a switch.** Pairs run as background sessions (see Bootstrap), so
+the anchor ends one from outside. When the assignment is done, the pair sends its done
+message and any handoff note. Once the pair is idle (`status` in `claude agents
+--json`), the anchor runs `claude stop <id>`, which closes any pane attached to it, and
+then `claude rm <id>`. Stopping keeps the conversation, and `rm` leaves the pair's
+worktree alone (verified for a worktree made with `git worktree add`). The `rm` matters:
+a stopped session keeps its saved options, so relaunching it with a new `--model`
+without `rm` starts a copy under a new id. Then the anchor relaunches the role with
+`--resume <uuid> --model <new>` and re-attaches the panes (Bootstrap steps 6 and 7).
+The pair never ends its own process.
+
 ## Capturing learnings
 
 Reads of the project's conventions, specs, and docs are free and expected: the Anchor
@@ -302,6 +337,18 @@ relying on discipline to avoid them.
     environment. Either have the bootstrap install every gitignored dependency tree
     up front, or warn the pair that a green toolchain plus a red aggregate check
     means incomplete worktree setup before it means a real failure.
+  - **The pair's permission rules live in each worktree's gitignored
+    `.claude/settings.local.json`**, so a fresh worktree has none. The intent: a pair
+    owns its PRs end to end (push its branch with a lease, open, edit, ready, and
+    comment on its PRs, reply to and resolve its review threads, rebase and fold), and
+    can never merge, close, push to main, or force-push without a lease. Before
+    launching a pair, the anchor copies the file from an existing pair worktree of the
+    same repo, so the repo keeps one source for the rules. For the first pair of a repo
+    it drafts the file from the intent, shows it to the human, and writes it only after
+    approval. It writes with the Write or Edit tool (a bash `jq` rewrite of these files
+    was refused by auto mode). It never narrows the deny list. Settings changes take
+    effect only when a session starts, so the file goes in before the first launch;
+    changing it later takes effect at the pair's next resume.
   - Untracked directories in the anchor's checkout (working docs, plan folders) won't
     exist in a pair's worktree. If a unit's work genuinely needs one, that has to be
     handled deliberately — don't assume it's there.
@@ -422,9 +469,8 @@ of what the resume-or-create logic below is doing with session identity.
      '#{pane_current_command}'` shows a shell, not `claude`).
 
    Check both; either alone can be wrong. After a machine restart, panes can vanish
-   while their bus session records persist (which is why `--session-id <uuid>` can
-   still error "already in use" on a supposedly-fresh pair — see step 5), and tmux
-   panes can independently go stale without the bus knowing. If the two signals
+   while their bus session records persist, and tmux panes can independently go stale
+   without the bus knowing. If the two signals
    DISAGREE and there's any chance real work is happening there (a live `claude` in a
    pane, a live bus session, anything suggesting an active agent mid-task) — ASK THE
    OPERATOR. Do not kill it and do not reason your way to a verdict; a pair window
@@ -444,62 +490,83 @@ of what the resume-or-create logic below is doing with session identity.
 4. **Set up each pair's worktree and branch** (see Worktree isolation) before
    launching into it: `git worktree add ../<repo>-pair-N <branch>` from the anchor's
    checkout, then whatever dependency install the project needs (see Worktree
-   isolation's setup-cost notes) before the pair's first test run.
-5. **Stable session IDs, resume-or-create.** Mint a fixed UUID per role PER PAIR
-   INDEX once, persist in a gitignored `.pair-sessions.local.md` in the ANCHOR'S OWN
+   isolation's setup-cost notes) before the pair's first test run, and write the pair's
+   `.claude/settings.local.json` (see Worktree isolation) before the first launch.
+5. **Session IDs: the registry decides resume or create.** Record each role's session
+   UUID PER PAIR INDEX in a gitignored `.pair-sessions.local.md` in the ANCHOR'S OWN
    checkout — NOT per-worktree; a worktree only gets tracked files, so a gitignored
    registry written into a pair's worktree would not exist on the next launch. Read
-   and write it by absolute path from wherever a session runs. Reuse every launch:
+   and write it by absolute path from wherever a session runs:
    ```
    pair_1_navigator_session_id: <uuid>
    pair_1_driver_session_id: <uuid>
    pair_2_navigator_session_id: <uuid>
    ...
    ```
-   Run `uuidgen` bare (not in a compound with metachars) and capture. `--session-id
-   <uuid>` does NOT resume — verified live, it ERRORS with "Session ID `<uuid>` is
-   already in use" if that id already exists (e.g. after a pane was killed but the
-   session record persisted). The correct sequence on every launch: TRY `--resume
-   <uuid>` first (resumes the existing session); if that fails because the session
-   doesn't exist (first run), fall back to `--session-id <uuid>` (creates it). Keep
-   using the UUIDs as the identity — they are the unique, non-duplicable resume
-   handle; never switch to the role name as the identity, since names can duplicate
-   and UUIDs cannot.
-6. **Launch each in its own worktree, not the anchor's directory.** The launch
-   script must `cd` to the pair's worktree (`../<repo>-pair-N`) before starting the
-   session — cwd is no longer simply inherited from the tmux split once pairs live
-   in separate checkouts. `--name` sets only the CLI's display name (the prompt-box
-   border label); it does NOT set the inter-session bus name. The bus name that
-   `isend`/`ilist` address peers by comes from the `INTER_SESSION_NAME` environment
-   variable — without it, a spawned session auto-names itself on the bus from cwd
-   (e.g. `my-service-2`), and the anchor cannot address it as
-   `<repo>-pair-N-navigator`. Use the try-resume-then-create sequence from step 5 for
-   each pair's `$NAV_ID`/`$DRIVER_ID`.
+   The anchor can't mint these ahead of time. `claude --bg` assigns the session id
+   itself and ignores `--session-id` (verified: it warns and mints its own). So a role
+   with no registry entry launches without `--resume`; right after the launch the
+   anchor reads the id from `claude agents --json` (the entry whose `name` is the
+   role's name; its `sessionId`) and writes it to the registry. Every later launch of
+   that role passes `--resume <uuid>`. Don't build resume-or-create from `||`:
+   `claude --bg --resume <unknown uuid>` exits 0 and the worker crashes afterward
+   (verified), so the fallback never runs. Keep using the UUIDs as the identity — they
+   are the unique, non-duplicable resume handle; never switch to the role name as the
+   identity, since names can duplicate and UUIDs cannot.
+6. **Launch each in its own worktree, as a background session.** The launch script
+   must `cd` to the pair's worktree (`../<repo>-pair-N`) before starting the session,
+   because cwd is not inherited from anywhere once pairs live in separate checkouts
+   (verified: a `--bg` session starts in the directory it was launched from).
+   `--name` sets only the CLI's display name (the prompt-box border label); it does
+   NOT set the inter-session bus name. The bus name that `isend`/`ilist` address peers
+   by comes from the `INTER_SESSION_NAME` environment variable — without it, a spawned
+   session auto-names itself on the bus from cwd (e.g. `my-service-2`), and the anchor
+   cannot address it as `<repo>-pair-N-navigator`.
 
-   An inline `tmux send-keys` string with an env-assignment prefix and multiple flags
-   (`INTER_SESSION_NAME=... claude --session-id ... --name ... --model ...`) is
-   REJECTED by the permission scanner as unanalyzable shell syntax — verified live, it
-   blocks. The workaround: write each launch command to a small script file first
-   (with the Write tool), then `source` it from the pane — a plain `source <path>` is
-   statically analyzable and clears the scanner. Keep this pattern; do not "simplify"
-   it back to an inline string, that's what breaks:
+   `claude --bg` returns at once, and a background session needs an initial prompt:
+   without one it sits idle and does not register on the bus (verified). Give it a
+   one-line prompt telling it to wait for its kickoff message.
+
+   An inline command with an env-assignment prefix and multiple flags
+   (`INTER_SESSION_NAME=... claude --bg ... --name ... --model ...`) is REJECTED by the
+   permission scanner as unanalyzable shell syntax — verified live for the foreground
+   form. The workaround: write each launch command to a small script file first (with
+   the Write tool), then `source` it from the anchor's own shell. A plain
+   `source <path>` is statically analyzable and clears the scanner.
+
+   The skill owns the launch configuration; a project keeps no launch scripts of its
+   own. The anchor writes one script per role at launch time, into a scratch directory
+   outside the repo, by filling in this template, and rewrites the script whenever the
+   model changes:
    ```
-   tmux send-keys -t "$NAV_PANE" "source /path/to/launch_pair_N_navigator.sh" Enter
-   tmux send-keys -t "$DRIVER_PANE" "source /path/to/launch_pair_N_driver.sh" Enter
+   cd <absolute path of the pair's worktree>
+   INTER_SESSION_NAME=<repo>-pair-N-<role> claude --bg <resume> --name <repo>-pair-N-<role> --model <model> --autocompact 200k "<prompt>"
    ```
-   Where e.g. `launch_pair_N_navigator.sh` contains the real launch line
-   (resume-or-create per step 5, `INTER_SESSION_NAME=<repo>-pair-N-navigator` set,
-   `--name` matching for the display label, `cd` to the pair's worktree):
-   ```
-   cd /path/to/../<repo>-pair-N
-   INTER_SESSION_NAME=<repo>-pair-N-navigator claude --resume $NAV_ID --name <repo>-pair-N-navigator --model opus || \
-   INTER_SESSION_NAME=<repo>-pair-N-navigator claude --session-id $NAV_ID --name <repo>-pair-N-navigator --model opus
-   ```
+   `<role>` is `navigator` or `driver`. `<resume>` is `--resume <uuid>` when the
+   registry has an id for the role and is left out otherwise. `<model>` comes from the
+   assignment's tier (see Model tiers). `--name` matches the bus name for the display
+   label.
+
    Poll `ilist` until both `INTER_SESSION_NAME` values appear — those are the real bus
-   names, not the `--name` display values.
+   names, not the `--name` display values. Then open each pair's panes on its session:
+   ```
+   tmux send-keys -t "$NAV_PANE" "claude attach <short id>" Enter
+   tmux send-keys -t "$DRIVER_PANE" "claude attach <short id>" Enter
+   ```
+   `<short id>` is the first eight characters of the session UUID, the id `claude
+   --bg` prints. A pane is a view: closing it leaves the session running, and
+   `claude stop` closes the panes attached to it. Two panes can attach to one session
+   and show the same screen (verified).
 
-   Model aliases `opus` and `sonnet` are correct as used above (verified live: sessions
-   came up on Opus 5 / Sonnet).
+   A permission prompt in a background session appears in its attached panes, and the
+   session waits until someone answers (verified). With no pane attached it waits
+   unseen, so the anchor checks `claude agents --json` for a pair whose `status` is
+   `waiting` (`waitingFor` reads `permission prompt`) and tells the human to answer it
+   in the pair's pane. The anchor does not answer a pair's prompt for it.
+
+   Model aliases `opus`, `sonnet`, and `haiku` are correct as used above (verified live:
+   sessions came up on Opus 5 / Sonnet, and a `haiku` session reported
+   `claude-haiku-5-5`).
 7. **Send the kickoff prompt before any work.** A FRESH session (created, not
    resumed) has no idea it's a pair driver or navigator until it's told — a bus
    message asserting a role or handing it work is not, by itself, authority a fresh
@@ -514,7 +581,7 @@ of what the resume-or-create logic below is doing with session identity.
    `/pr-ownership`), say so explicitly in each kickoff prompt; if they didn't, say
    nothing and the default (pushing needs the human) holds. Templates below.
 
-### Kickoff prompt — Navigator (opus, left pane)
+### Kickoff prompt — Navigator (left pane)
 
 > You are the navigator for pair `N` in a multi-session bus-pairing setup (anchor +
 > up to three navigator/driver pairs) pairing on an implementation in the `<repo>`
@@ -544,7 +611,7 @@ of what the resume-or-create logic below is doing with session identity.
 > addressed to the recipient's bus name in your first line. Wait for the anchor's
 > first step.
 
-### Kickoff prompt — Driver (sonnet, right pane)
+### Kickoff prompt — Driver (right pane)
 
 > You are the driver for pair `N` in a multi-session bus-pairing setup (anchor + up
 > to three navigator/driver pairs) pairing on an implementation in the `<repo>` repo.
