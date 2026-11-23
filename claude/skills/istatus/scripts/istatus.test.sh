@@ -191,6 +191,23 @@ assert_eq "$(refusal "predates" --pane %9 resolve n1):$(state_of sess-2 '[.items
 unset ISTATUS_TMUX_PANES
 teardown
 
+# istatus is run through a symlink (~/.local/bin/istatus), so the check must
+# find its sibling script from the link's target, and say nothing on stderr.
+setup
+seed sess-2 "$SEED_MIXED"
+point %9 sess-2
+touch -t "$(date -r $(($(date +%s) - 1000)) +%Y%m%d%H%M.%S)" "$DIR/panes/%9.session_id"
+export ISTATUS_TMUX_PANES=$'%9\tproj\t1\t'"$(($(date +%s) - 10))"
+mkdir "$DIR/bin"
+ln -s "$SCRIPT" "$DIR/bin/istatus"
+REAL_SCRIPT="$SCRIPT"
+SCRIPT="$DIR/bin/istatus"
+assert_eq "$(refusal "predates" --pane %9 resolve n1)" "refused" \
+  "--pane run through a symlink refuses a pointer older than its pane"
+SCRIPT="$REAL_SCRIPT"
+unset ISTATUS_TMUX_PANES
+teardown
+
 # ── --pane does not create a status file for the target session ─────────────
 setup
 point %9 sess-2

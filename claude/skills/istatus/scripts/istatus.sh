@@ -155,6 +155,17 @@ DONE_LIMIT=20
 die() { printf 'istatus: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'istatus: WARNING: %s\n' "$*" >&2; }
 
+# The directory this script really lives in: istatus is run through a symlink
+# (~/.local/bin/istatus), and its sibling scripts sit beside the target.
+script_dir() {
+  local script="${BASH_SOURCE[0]}" link
+  while [[ -L "$script" ]]; do
+    link=$(readlink "$script")
+    if [[ "$link" == /* ]]; then script="$link"; else script="$(dirname "$script")/$link"; fi
+  done
+  dirname "$script"
+}
+
 # --pane <pane> acts on the session that occupies <pane> rather than on the
 # caller's own. It is how the popup and the sidebar, which run from tmux and
 # not inside any Claude session, mark another session's items read, unread or
@@ -180,7 +191,7 @@ if [[ -n "$TARGET_PANE" ]]; then
   [[ -n "$sid" ]] || die "no session recorded for pane $TARGET_PANE"
   # tmux reuses pane ids: a pointer older than the pane's process names a
   # session from an earlier pane.
-  if "$(dirname "${BASH_SOURCE[0]}")/istatus-pane-start.sh" stale "$TARGET_PANE"; then
+  if "$(script_dir)/istatus-pane-start.sh" stale "$TARGET_PANE"; then
     die "the session recorded for pane $TARGET_PANE predates the pane (tmux reused its id)"
   fi
 else
