@@ -440,8 +440,9 @@ Run from the anchor's own pane.
   label (prompt box / picker / title) and is NOT an identity — it CAN be duplicated,
   so never rely on it for identity or resume.
 
-These two are orthogonal. Set `INTER_SESSION_NAME=<role>` on every launch regardless
-of what the resume-or-create logic below is doing with session identity.
+These two are orthogonal. Give every launch its bus name (through `--settings`, see
+step 6) regardless of what the resume-or-create logic below is doing with session
+identity.
 
 1. Resolve `<repo>` = this session's bus name. Decide how many pairs to launch (1-3)
    based on how parallelizable the work actually is — this is the anchor's judgment
@@ -504,8 +505,10 @@ of what the resume-or-create logic below is doing with session identity.
    ...
    ```
    The anchor can't mint these ahead of time. `claude --bg` assigns the session id
-   itself and ignores `--session-id` (verified: it warns and mints its own). So a role
-   with no registry entry launches without `--resume`; right after the launch the
+   itself for a new session and ignores `--session-id` (verified: it warns and mints
+   its own); a resumed session keeps its existing id (verified), so a resume never
+   changes the registry entry. So a role with no registry entry launches without
+   `--resume`; right after the launch the
    anchor reads the id from `claude agents --json` (the entry whose `name` is the
    role's name; its `sessionId`) and writes it to the registry. Every later launch of
    that role passes `--resume <uuid>`. Don't build resume-or-create from `||`:
@@ -522,6 +525,31 @@ of what the resume-or-create logic below is doing with session identity.
    by comes from the `INTER_SESSION_NAME` environment variable — without it, a spawned
    session auto-names itself on the bus from cwd (e.g. `my-service-2`), and the anchor
    cannot address it as `<repo>-pair-N-navigator`.
+
+   **A background session does not inherit the launch line's environment.** `claude
+   --bg` hands the session to a pre-started spare from the daemon (`claude daemon
+   run`), and the spare carries the daemon's environment, captured when the first
+   `claude --bg` started the daemon. An `INTER_SESSION_NAME=... claude --bg ...`
+   assignment therefore never reaches a later session (observed on `ipc`: after six
+   launches, `ps eww` showed `INTER_SESSION_NAME=ipc-pair-1-navigator` on all six pair
+   processes, so every listener came up under pair 1's name and they collided; filed
+   as anthropics/claude-code#111889, and the listener collision as
+   yilunzhang/claude-code-inter-session#19). cwd,
+   session id, and model are unaffected. Pass the environment through `--settings`
+   instead: it travels with the session, and Claude Code applies its `env` block to
+   the session's tools and plugin processes. Set two variables there:
+   - `INTER_SESSION_NAME`: the role's bus name.
+   - `INTER_SESSION_PPID_OVERRIDE`: a number unique to the role. The plugin keys each
+     listener's lock and state file on a process id, found by walking up from the
+     listener to a Claude process; in a background session that walk can stop at the
+     shared daemon, so two roles end up on one lock even with distinct names. The
+     override (honored by `resolve_listener_key` in the plugin's `shared.py`) replaces
+     the walk. Use a number above the macOS pid range (99999), shaped `9PPPNM`: `N` is
+     the pair, `M` is 1 for the navigator and 2 for the driver, and `PPP` is a
+     three-digit number for the repo. The numbers must be unique across the machine,
+     not just within one repo, because every anchor writes to the same
+     `~/.claude/data/inter-session/clients/` directory. `ipc` uses `000`; give each
+     other repo its own `PPP`, and ask the human if you can't tell which are taken.
 
    `claude --bg` returns at once, and a background session needs an initial prompt:
    without one it sits idle and does not register on the bus (verified). Give it a
@@ -540,23 +568,31 @@ of what the resume-or-create logic below is doing with session identity.
    model changes:
    ```
    cd <absolute path of the pair's worktree>
-   INTER_SESSION_NAME=<repo>-pair-N-<role> claude --bg <resume> --name <repo>-pair-N-<role> --model <model> --autocompact 200k "<prompt>"
+   claude --bg <resume> --name <repo>-pair-N-<role> --model <model> --autocompact 200k --settings '{"env":{"INTER_SESSION_NAME":"<repo>-pair-N-<role>","INTER_SESSION_PPID_OVERRIDE":"<9PPPNM>"}}' "<prompt>"
    ```
    `<role>` is `navigator` or `driver`. `<resume>` is `--resume <uuid>` when the
-   registry has an id for the role and is left out otherwise. `<model>` comes from the
-   assignment's tier (see Model tiers). `--name` matches the bus name for the display
-   label.
+   registry has an id for the role and is left out otherwise; resuming with `--bg`
+   keeps the original session id (verified). `<model>` comes from the assignment's
+   tier (see Model tiers). `--name` matches the bus name for the display label.
 
-   Poll `ilist` until both `INTER_SESSION_NAME` values appear — those are the real bus
-   names, not the `--name` display values. Then open each pair's panes on its session:
+   Verify each role after launch, because `ilist` alone is not proof (it showed stale
+   and colliding entries that `isend` could not reach): the file
+   `~/.claude/data/inter-session/clients/<override>.session` must exist and carry the
+   role's name, and `isend <role>` must succeed. Then open each pair's panes on its
+   session:
    ```
    tmux send-keys -t "$NAV_PANE" "claude attach <short id>" Enter
    tmux send-keys -t "$DRIVER_PANE" "claude attach <short id>" Enter
    ```
    `<short id>` is the first eight characters of the session UUID, the id `claude
    --bg` prints. A pane is a view: closing it leaves the session running, and
-   `claude stop` closes the panes attached to it. Two panes can attach to one session
-   and show the same screen (verified).
+   `claude stop` closes the panes attached to it, so after any stop-and-relaunch the
+   anchor re-runs `claude attach <short id>` in each pane. Two panes can attach to one
+   session and show the same screen (verified).
+
+   When the anchor scripts its own loops over roles or messages in zsh, an unquoted
+   `$var` is not word-split: `for p in $pending` runs once over the whole string (that
+   misrouted a message on `ipc`). Use an array or `${=var}`.
 
    A permission prompt in a background session appears in its attached panes, and the
    session waits until someone answers (verified). With no pane attached it waits
