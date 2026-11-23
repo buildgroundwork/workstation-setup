@@ -33,6 +33,7 @@ echo "Sweeping stale inter-session clients..."
 
 tmuxinator start workstation
 tmuxinator start rhyme-scheme
+tmuxinator start amanuensis
 # Company branches add a line here for each project, named after its config in
 # this directory (see project.yml.example):
 #   tmuxinator start my-service
