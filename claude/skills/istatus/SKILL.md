@@ -29,6 +29,8 @@ Same trigger as the old `iflag` rule in CLAUDE.md: **you are now waiting on Adam
 
 Don't call `decide` for a turn that reports progress and keeps working, or one that offers optional next steps you could proceed on yourself without Adam. The bar is the same as it always was for flagging: default to raising it when genuinely blocked and idle, even for something that feels minor — a missed decision point is worse than one Adam glances at and already knew the answer to.
 
+**Raise a decide item only when a human may need to act**: a decision or approval only they can give, a question only they can answer, or a prompt blocking the session. Don't raise one for progress, for waiting on CI, a review, or another session, or for conferring with a peer, a partner, or an anchor; those go over the bus. Where an anchor coordinates sessions, a session sends human-facing items to the anchor, and only the anchor raises them, so the human sees each once. The exception is a permission prompt blocking a session's own pane, which only the human can answer there. Resolve an item as soon as it no longer needs the human. This holds for every agent, not only pair sessions.
+
 If more than one thing is open at once (not unusual for a `/pivotal` anchor juggling several pairs), call `decide` once per distinct item rather than bundling several questions into one entry — the sidebar is a list for a reason, and a reader should be able to resolve them independently as answers come in.
 
 ## When to call `resolve`
