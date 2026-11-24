@@ -36,9 +36,10 @@ all_starts() {
   local pids
   pids=$(tmux list-panes -a -F $'#{pane_id}\t#{pane_pid}' 2>/dev/null) || return 0
   [[ -n "$pids" ]] || return 0
-  # One ps call for every pane. A pid that has gone makes ps exit non-zero but
-  # still prints the others.
-  ps -o pid=,etime= -p "$(awk -F'\t' '{ printf "%s%s", sep, $2; sep = "," }' <<<"$pids")" 2>/dev/null \
+  # One ps call scans every process, and the awk keeps the panes' pids. Naming
+  # the pids with -p is slower: ps took 1.5 to 2 s for a list of several, against
+  # 0.06 s for the full scan. A pid that has gone is just absent from the scan.
+  ps -axo pid=,etime= 2>/dev/null \
     | awk -v now="$(date +%s)" -F'\t' '
         NR == FNR { split($0, f, " "); elapsed[f[1]] = f[2]; next }
         { e = elapsed[$2]; if (e == "") next

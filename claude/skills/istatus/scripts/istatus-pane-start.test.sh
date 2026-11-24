@@ -190,6 +190,31 @@ pointer_at %1 $((NOW - 1000))
 assert_eq "$(stale_rc %1)" "rc=0" "stale judges a pointer against the start time ps reports"
 teardown
 
+# ── the real ps ──────────────────────────────────────────────────────────────
+# Only tmux is stubbed, so this runs the script's own ps call against a live
+# process. A pid that has gone is left out.
+setup
+rm "$DIR/bin/ps"
+sleep 30 &
+SLEEPER=$!
+sleep 2
+pane_pids %1 "$SLEEPER" %2 999999
+assert_eq "$(within "$(age_of %1)" 2)" ok "starts reads a live process's start time from the real ps"
+assert_eq "$("$SCRIPT" starts %2 | wc -c | tr -d ' ')" 0 "starts leaves out a pid that does not exist"
+kill "$SLEEPER" 2>/dev/null
+wait "$SLEEPER" 2>/dev/null
+teardown
+
+# ps with a -p list of several pids takes 1.5 to 2 s on this machine, against
+# 0.06 s for a full scan, so the script must not select pids with -p.
+setup
+printf '#!/bin/sh\ncase " $* " in *" -p "*) exit 99 ;; esac\ncat "$STUB_PS"\n' > "$DIR/bin/ps"
+pane_pids %1 101 %2 102
+ps_etimes 101 00:10 102 00:20
+assert_eq "$("$SCRIPT" starts | awk -F'\t' '{ print $1 }' | tr '\n' ' ')" '%1 %2 ' \
+  "starts reads every pane without a -p pid list"
+teardown
+
 # ── usage ────────────────────────────────────────────────────────────────────
 setup
 assert_eq "$("$SCRIPT" bogus >/dev/null 2>&1; echo "rc=$?")" "rc=2" "an unknown command exits 2"
