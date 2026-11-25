@@ -8,4 +8,9 @@
 #
 # `ls` is here for a different reason: rtk's listing hid a directory entry
 # ("1 filtered"), which read as if the directory didn't exist.
-exclude_commands = ["find", "wc", "tree", "rg", "diff", "du", "df", "stat", "ps", "git branch", "ls"]
+#
+# `vitest` is here because rtk's wrapper runs Vitest 5 with --reporter=json and
+# no output file. Vitest then writes .vitest/json/output.json into the project
+# (an untracked file that fails format checks), and rtk can't parse the result,
+# so the agent sees no test summary.
+exclude_commands = ["find", "wc", "tree", "rg", "diff", "du", "df", "stat", "ps", "git branch", "ls", "vitest"]
