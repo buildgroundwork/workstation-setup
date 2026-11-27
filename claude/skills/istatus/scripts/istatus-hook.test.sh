@@ -609,5 +609,38 @@ assert_eq "$(stop_out sess-1)" "" \
   "stop settling a blocking item writes nothing to stdout"
 teardown
 
+# ── a background session is filed under the pane that shows it ───────────────
+# A claude --bg session's TMUX_PANE is the daemon's, so the hook asks where
+# the session's claude attach runs. A stub tmux and ps stand in for the real ones.
+bg_stubs() {
+  mkdir -p "$DIR/bin"
+  printf '#!/bin/sh\nprintf "%%%%381\\t32896\\n"\n' > "$DIR/bin/tmux"
+  printf '#!/bin/sh\nprintf "32896 4836 -zsh\\n 2662 32896 claude attach ba41dc57\\n"\n' > "$DIR/bin/ps"
+  chmod +x "$DIR/bin/tmux" "$DIR/bin/ps"
+}
+BG_SID=ba41dc57-dca5-436c-8a18-f0edac269d73
+
+setup
+bg_stubs
+PATH="$DIR/bin:$PATH" add %19 "$BG_SID" "Claude needs your permission to use Bash"
+assert_eq "$(pointer_of %381)" "$BG_SID" "a blocking item's pointer goes to the pane that attaches the session"
+assert_eq "$(pointer_of %19)" "" "and not to the pane the daemon's environment names"
+assert_eq "$(jq -r .pane "$DIR/status/$BG_SID.json")" "%381" \
+  "the status file records the pane that attaches the session"
+teardown
+
+setup
+bg_stubs
+printf '{"session_id":"%s","cwd":"/tmp/proj","hook_event_name":"SessionStart","source":"startup"}' "$BG_SID" \
+  | PATH="$DIR/bin:$PATH" TMUX=fake TMUX_PANE=%19 "$SCRIPT" start
+assert_eq "$(pointer_of %381)" "$BG_SID" "SessionStart's pointer goes to the pane that attaches the session"
+teardown
+
+setup
+bg_stubs
+PATH="$DIR/bin:$PATH" add %42 sess-1 "Claude needs your permission to use Bash"
+assert_eq "$(pointer_of %42)" "sess-1" "a session no claude attach shows keeps TMUX_PANE"
+teardown
+
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

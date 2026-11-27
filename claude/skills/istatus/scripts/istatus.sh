@@ -254,11 +254,16 @@ fi
 # only one session occupies a given pane at a time. Not with --pane: then
 # TMUX_PANE is the caller's pane (the popup's, the sidebar's), which the
 # target session does not occupy.
-if [[ -z "$TARGET_PANE" && -n "${TMUX_PANE:-}" ]]; then
-  mkdir -p "$PANES_DIR"
-  pane_tmp=$(mktemp "${PANES_DIR}/.XXXXXX")
-  printf '%s' "$sid" > "$pane_tmp"
-  mv "$pane_tmp" "${PANES_DIR}/${TMUX_PANE}.session_id"
+# A background (claude --bg) session's TMUX_PANE is the daemon's, so the pane
+# is the one that attaches the session, when there is one.
+if [[ -z "$TARGET_PANE" ]]; then
+  own_pane=$("$(script_dir)/istatus-session-pane.sh" "$sid" 2>/dev/null) || own_pane="${TMUX_PANE:-}"
+  if [[ -n "$own_pane" ]]; then
+    mkdir -p "$PANES_DIR"
+    pane_tmp=$(mktemp "${PANES_DIR}/.XXXXXX")
+    printf '%s' "$sid" > "$pane_tmp"
+    mv "$pane_tmp" "${PANES_DIR}/${own_pane}.session_id"
+  fi
 fi
 
 # Same locking pattern as attention-state.sh: flock when available, a

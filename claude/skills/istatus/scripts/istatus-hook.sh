@@ -107,6 +107,7 @@ set -euo pipefail
 exec 3>&1 >/dev/null
 trap 'exit 0' EXIT
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ATTENTION_DIR="${CLAUDE_TMUX_ATTENTION_DIR:-$HOME/.claude-tmux-attention}"
 STATUS_DIR="$ATTENTION_DIR/status"
 PANES_DIR="$ATTENTION_DIR/panes"
@@ -347,13 +348,14 @@ beat() {
 # already pending. A tool-sourced add is never skipped by this check — it is
 # not the duplicate this guards against.
 record_blocking_item() {
-  local sid="$1" text="$2" source="$3" status_file id
+  local sid="$1" text="$2" source="$3" status_file id pane
+  pane=$(own_pane "$sid")
   status_file="$STATUS_DIR/${sid}.json"
   id=$(date -u +%Y%m%dT%H%M%SZ)-$$
   ensure_status_file "$status_file"
   rewrite_status "$status_file" \
     --arg id "$id" --arg text "$text" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg pane "${TMUX_PANE:-}" --arg source "$source" "$NORMALIZE_JQ"'
+    --arg pane "$pane" --arg source "$source" "$NORMALIZE_JQ"'
     normalize
     # Record the pane only when known, so an add without one cannot erase it.
     | (if $pane != "" then .pane = $pane else . end)
@@ -363,7 +365,7 @@ record_blocking_item() {
        end)
   '
 
-  record_pane_occupant "$sid"
+  record_pane_occupant "$sid" "$pane"
 }
 
 # The read-modify-write for arm. Runs under the session lock.
@@ -524,12 +526,20 @@ rewrite_status() {
 # istatus.sh writes; the hook writes it too because a session can block before
 # it ever calls istatus.
 record_pane_occupant() {
-  [[ -n "${TMUX_PANE:-}" ]] || return 0
-  local pane_tmp
+  local pane="${2-}" pane_tmp
+  [[ -n "$pane" ]] || pane=$(own_pane "$1")
+  [[ -n "$pane" ]] || return 0
   mkdir -p "$PANES_DIR"
   pane_tmp=$(mktemp "${PANES_DIR}/.XXXXXX")
   printf '%s' "$1" > "$pane_tmp"
-  mv "$pane_tmp" "${PANES_DIR}/${TMUX_PANE}.session_id"
+  mv "$pane_tmp" "${PANES_DIR}/${pane}.session_id"
+}
+
+# The pane that shows this session: where its claude attach runs when it is a
+# background session (its TMUX_PANE is the daemon's, not its own), else
+# TMUX_PANE. Empty when neither is known.
+own_pane() {
+  "$SCRIPT_DIR/istatus-session-pane.sh" "$1" 2>/dev/null || echo "${TMUX_PANE:-}"
 }
 
 case "${1:-}" in

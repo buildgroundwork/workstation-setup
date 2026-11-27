@@ -272,5 +272,22 @@ assert_eq "$(refusal "--pane" --pane %9 summary)" "refused" \
   "--pane refuses summary, which belongs to the session itself"
 teardown
 
+# ── a background session's pointer goes to the pane that shows it ────────────
+# A claude --bg session's TMUX_PANE is the daemon's, so istatus asks where the
+# session's claude attach runs. A stub tmux and ps stand in for the real ones.
+setup
+BG_SID=ba41dc57-dca5-436c-8a18-f0edac269d73
+mkdir -p "$DIR/bin"
+printf '#!/bin/sh\nprintf "%%%%381\\t32896\\n"\n' > "$DIR/bin/tmux"
+printf '#!/bin/sh\nprintf "32896 4836 -zsh\\n 2662 32896 claude attach ba41dc57\\n"\n' > "$DIR/bin/ps"
+chmod +x "$DIR/bin/tmux" "$DIR/bin/ps"
+printf 'working\n' | env PATH="$DIR/bin:$PATH" TMUX_PANE=%19 CLAUDE_CODE_SESSION_ID="$BG_SID" "$SCRIPT" summary >/dev/null 2>&1
+assert_eq "$(cat "$DIR/panes/%381.session_id" 2>/dev/null):$([[ -e "$DIR/panes/%19.session_id" ]] && echo present || echo absent)" \
+  "$BG_SID:absent" "istatus files a background session's pointer under the pane that attaches it"
+printf 'working\n' | env PATH="$DIR/bin:$PATH" TMUX_PANE=%42 CLAUDE_CODE_SESSION_ID=sess-1 "$SCRIPT" summary >/dev/null 2>&1
+assert_eq "$(cat "$DIR/panes/%42.session_id" 2>/dev/null)" "sess-1" \
+  "a session no claude attach shows keeps TMUX_PANE"
+teardown
+
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
