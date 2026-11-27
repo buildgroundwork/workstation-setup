@@ -136,6 +136,12 @@ case" and "I concur" are different; the condition has to actually close first. E
 seat can concur conditionally, and the other must let the condition land before
 treating the handshake as complete.
 
+**A fixup is a commit: the navigator reviews it before any rebase.** Sessions here
+run with `GIT_EDITOR=true` and `rebase.autoSquash=true`, so `git commit --fixup=amend:`
+silently drops its replacement message and a plain `git rebase -i` folds pending
+fixups without showing them. The driver therefore does not fold, or rebase over,
+fixups the navigator hasn't seen, including the deliberate fold at the end.
+
 The anchor never manufactures or relocates pair concurrence. It must not instruct the
 driver to commit around the navigator, and must not instruct the navigator to "tell
 the driver to commit" — both relocate a command instead of removing one. Concurrence
