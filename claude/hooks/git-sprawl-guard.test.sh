@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Tests for git-sprawl-guard.sh, the PreToolUse hook that keeps a project's
 # worktrees under its own .claude/worktrees/ and caps both the linked
-# worktrees and the unmerged local branches.
+# worktrees and the unmerged local branches that have no open PR.
 #
 # Each case builds a throwaway repo (with a bare origin, so origin/main
 # exists), feeds the hook a Bash tool payload on stdin as Claude Code does,
 # and reads its verdict: "deny" when it prints a deny decision, "allow" when
 # it prints nothing. No `set -e`: a failing hook must surface as a FAIL line
 # from assert_eq.
+#
+# A stub `gh` stands in for GitHub: `gh pr list` prints the head branches
+# listed in $STUB_PRS (none by default), exits 1 when $STUB_FAIL is set, and
+# logs each call to $STUB_LOG.
 #
 # Run: claude/hooks/git-sprawl-guard.test.sh
 
@@ -25,6 +29,18 @@ trap 'rm -rf "$SCRATCH"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com
 export GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
+
+mkdir -p "$SCRATCH/bin"
+cat >"$SCRATCH/bin/gh" <<'EOF'
+#!/bin/bash
+echo "$*" >>"$STUB_LOG"
+[[ -n "${STUB_FAIL:-}" ]] && exit 1
+[[ -f "$STUB_PRS" ]] && cat "$STUB_PRS"
+exit 0
+EOF
+chmod +x "$SCRATCH/bin/gh"
+export PATH="$SCRATCH/bin:$PATH" STUB_PRS="$SCRATCH/prs" STUB_LOG="$SCRATCH/gh.log"
+: >"$STUB_LOG"
 
 # new_repo <name> -> the path of a repo on main, pushed to its own bare origin.
 new_repo() {
@@ -187,12 +203,80 @@ assert_eq "$(verdict "$repo" 'git checkout -b three')" allow \
   "a branch merged into origin/main no longer counts"
 
 repo=$(new_repo brdefault)
-for n in 1 2 3 4 5 6; do
+for n in 1 2 3 4 5; do
   git -C "$repo" checkout -q -b "b$n" main
   git -C "$repo" commit -q --allow-empty -m "b$n"
 done
 git -C "$repo" checkout -q main
+assert_eq "$(verdict "$repo" 'git checkout -b b7')" allow "five unmerged branches are under the default cap"
+git -C "$repo" checkout -q -b b6 main
+git -C "$repo" commit -q --allow-empty -m b6
+git -C "$repo" checkout -q main
 assert_eq "$(verdict "$repo" 'git checkout -b b7')" deny "the default cap is six unmerged branches"
+git -C "$repo" config workstation.maxWorktrees 1
+assert_eq "$(verdict "$repo" 'git checkout -b b7')" deny "the worktree cap does not change the branch cap"
+
+# ── a branch with an open PR does not count ──────────────────────────────────
+repo=$(new_repo brpr)
+git -C "$repo" config workstation.maxBranches 2
+for n in one two three four; do
+  git -C "$repo" checkout -q -b "$n" main
+  git -C "$repo" commit -q --allow-empty -m "$n"
+done
+git -C "$repo" checkout -q main
+printf 'one\ntwo\nthree\n' >"$STUB_PRS"
+assert_eq "$(verdict "$repo" 'git checkout -b five')" allow \
+  "four unmerged branches, three with open PRs, leave one counted under a cap of two"
+printf 'one\ntwo\n' >"$STUB_PRS"
+assert_eq "$(verdict "$repo" 'git checkout -b five')" deny \
+  "two counted branches reach a cap of two once only two have PRs"
+reply=$(reason "$repo" 'git checkout -b five')
+assert_contains "$reply" "three (" "a branch without a PR is listed"
+assert_contains "$reply" "open PR doesn't count" "the deny reason says PR branches are exempt"
+assert_eq "$([[ "$reply" == *"  one ("* ]] && echo listed || echo unlisted)" unlisted \
+  "a branch with an open PR is not listed"
+printf 'one\ntwo\nthree\nfour\n' >"$STUB_PRS"
+assert_eq "$(verdict "$repo" 'git worktree add -b five .claude/worktrees/five')" allow \
+  "with every branch under review, a new branch is allowed"
+: >"$STUB_PRS"
+
+# ── GitHub is asked only once the cap is reached ─────────────────────────────
+repo=$(new_repo brlazy)
+git -C "$repo" config workstation.maxBranches 2
+git -C "$repo" checkout -q -b one main
+git -C "$repo" commit -q --allow-empty -m one
+git -C "$repo" checkout -q main
+: >"$STUB_LOG"
+assert_eq "$(verdict "$repo" 'git checkout -b two')" allow "one unmerged branch under a cap of two is allowed"
+assert_eq "$(wc -c <"$STUB_LOG" | tr -d ' ')" 0 "gh is not called below the cap"
+git -C "$repo" checkout -q -b two main
+git -C "$repo" commit -q --allow-empty -m two
+git -C "$repo" checkout -q main
+verdict "$repo" 'git checkout -b three' >/dev/null
+assert_contains "$(cat "$STUB_LOG")" "pr list" "gh pr list is called once the cap is reached"
+
+# ── when GitHub can't answer, the command is allowed ─────────────────────────
+assert_eq "$(STUB_FAIL=1 verdict "$repo" 'git checkout -b three')" allow \
+  "a failing gh allows branch creation at the cap"
+assert_eq "$(verdict "$repo" 'git checkout -b three')" deny "the same command is denied once gh answers"
+
+# ── the deny lists branches oldest first and marks the stale ones ────────────
+repo=$(new_repo brage)
+git -C "$repo" config workstation.maxBranches 2
+git -C "$repo" checkout -q -b recent-work main
+git -C "$repo" commit -q --allow-empty -m recent
+git -C "$repo" checkout -q -b ancient-work main
+GIT_COMMITTER_DATE="2026-01-01T00:00:00Z" git -C "$repo" commit -q --allow-empty -m ancient
+git -C "$repo" checkout -q main
+reply=$(reason "$repo" 'git checkout -b new')
+assert_contains "$reply" "ancient-work (" "the older branch is listed with its age"
+assert_contains "$reply" ", stale)" "a branch past the stale age is marked stale"
+assert_contains "$reply" "recent-work (0d)" "a fresh branch is listed with no stale mark"
+assert_eq "$([[ "${reply%%recent-work (*}" == *"ancient-work ("* ]] && echo first || echo last)" first \
+  "the oldest branch comes first"
+git -C "$repo" config workstation.staleBranchDays 100000
+assert_eq "$([[ "$(reason "$repo" 'git checkout -b new')" == *", stale)"* ]] && echo marked || echo unmarked)" unmarked \
+  "workstation.staleBranchDays sets how old counts as stale"
 
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

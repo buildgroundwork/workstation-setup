@@ -331,7 +331,11 @@ relying on discipline to avoid them.
   worktrees, each with its own dependency trees, make the endpoint scanner churn.
   The `git-sprawl-guard.sh` hook enforces both the location and the cap
   (`git config workstation.maxWorktrees`, default 4), and caps a repo's local
-  branches not merged into `origin/main` (`workstation.maxBranches`, default 6).
+  branches that are neither merged into `origin/main` nor the head of an open PR
+  (`workstation.maxBranches`, default 6, separate from the worktree cap: a pair
+  works in one worktree but may have several branches in flight). A pair's branches under review never block
+  its next piece of work; a branch with no PR does, so push and open a PR for work
+  worth keeping, and delete what's stale (14+ days since the last commit).
 - One branch per pair. Git forbids two worktrees on the same branch outright; even if
   it didn't, sharing a branch would recreate the coupling one layer down.
 - Launch scripts `cd` to the pair's own worktree before starting the session, not the

@@ -14,8 +14,21 @@
 #     worktrees (default 4: one per pair, up to three pairs, plus the anchor).
 #   - A command that creates a branch (`git checkout -b`, `git switch -c`,
 #     `git branch <name>`, `git worktree add -b`) is denied once the repo
-#     already has `workstation.maxBranches` local branches not merged into
-#     origin/main (default 6). Merged branches don't count.
+#     already has `workstation.maxBranches` local branches (default 6) that
+#     are neither merged into origin/main nor the head of an open pull request.
+#     This cap is separate from the worktree cap: a pair works in one worktree
+#     but can have several branches in flight, switching between them there. Merged branches and open-PR branches don't count:
+#     work waiting on review must not stop an agent starting the next piece.
+#     The deny message lists the counted branches oldest first, with the days
+#     since each one's last commit, and marks those older than
+#     `workstation.staleBranchDays` (default 14) as stale, since the staler a
+#     branch, the less likely it holds anything worth keeping.
+#
+# The open PRs come from `gh pr list`, asked only once the unmerged branches
+# reach the cap, so an ordinary branch creation costs nothing extra. When gh
+# can't answer (not installed, offline, not signed in, or no reply in five
+# seconds), the hook allows the command rather than block work on a flaky
+# network.
 #
 # Both limits are per-repo `git config` values, so a project with more pairs
 # raises its own cap. The deny message says what to do instead: reuse a
@@ -46,6 +59,7 @@ cwd=$(jq -r '.cwd // ""' <<<"$payload")
 
 default_max_worktrees=4
 default_max_branches=6
+default_stale_branch_days=14
 
 nl=$'\n'
 command_start="(^|[;&${nl}]|\|\|)[[:space:]]*"
@@ -164,9 +178,35 @@ check_worktree_add() {
   fi
 }
 
+# run_with_timeout <seconds> <command...> -- the command's output and status,
+# or a kill after the time is up. The watcher's output goes to /dev/null so it
+# doesn't hold open a pipe the caller is reading.
+run_with_timeout() {
+  local seconds="$1" pid watcher status
+  shift
+  "$@" &
+  pid=$!
+  (sleep "$seconds"; kill "$pid" 2>/dev/null) >/dev/null 2>&1 &
+  watcher=$!
+  wait "$pid"
+  status=$?
+  kill "$watcher" 2>/dev/null
+  return "$status"
+}
+
+# open_pr_branches <dir> -> the head branch of each open pull request, one per
+# line. Fails when GitHub can't be asked: no gh, no network, no sign-in, or no
+# answer in five seconds.
+open_pr_branches() {
+  command -v gh >/dev/null 2>&1 || return 1
+  (cd "$1" && GH_PROMPT_DISABLED=1 run_with_timeout 5 \
+    gh pr list --state open --limit 200 --json headRefName --jq '.[].headRefName' 2>/dev/null)
+}
+
 # check_branch_creation <dir>
 check_branch_creation() {
-  local dir="$1" ref="" candidate branch unmerged="" count max
+  local dir="$1" ref="" candidate line tip name branches="" prs counted="" count=0
+  local max stale_days now age flag
   for candidate in origin/main origin/master main master; do
     if git -C "$dir" rev-parse --verify -q "refs/remotes/$candidate" >/dev/null 2>&1 \
       || git -C "$dir" rev-parse --verify -q "refs/heads/$candidate" >/dev/null 2>&1; then
@@ -176,14 +216,30 @@ check_branch_creation() {
   done
   [[ -n "$ref" ]] || return 0
 
-  while IFS= read -r branch; do
-    [[ -n "$branch" ]] && unmerged+="  ${branch}${nl}"
-  done < <(git -C "$dir" for-each-ref --no-merged "$ref" --format='%(refname:short)' refs/heads 2>/dev/null)
+  # One "<last commit epoch> <name>" line per unmerged branch.
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && branches+="${line}${nl}"
+  done < <(git -C "$dir" for-each-ref --no-merged "$ref" --format='%(committerdate:unix) %(refname:short)' refs/heads 2>/dev/null)
 
   max=$(config_number "$dir" workstation.maxBranches "$default_max_branches")
-  count=$(count_lines "$unmerged")
+  (( $(count_lines "$branches") >= max )) || return 0
+
+  prs=$(open_pr_branches "$dir") || return 0
+
+  stale_days=$(config_number "$dir" workstation.staleBranchDays "$default_stale_branch_days")
+  now=$(date +%s)
+  while IFS=' ' read -r tip name; do
+    [[ -n "$name" ]] || continue
+    [[ "${nl}${prs}${nl}" == *"${nl}${name}${nl}"* ]] && continue
+    age=$(( (now - tip) / 86400 ))
+    flag=""
+    (( age >= stale_days )) && flag=", stale"
+    counted+="  ${name} (${age}d${flag})${nl}"
+    count=$((count + 1))
+  done < <(printf '%s' "$branches" | sort -n)
+
   if (( count >= max )); then
-    deny "This repo already has ${count} local branches not merged into ${ref} (the cap is ${max}, set with git config workstation.maxBranches). Don't create another. Unmerged branches:${nl}${unmerged}Finish one first: merge it, or delete it if it is merged or superseded (check its tip is on main, and record the tip so it can be restored). Or reuse an existing branch for this work. If the cap is too low for this project, tell the user rather than raising it yourself."
+    deny "This repo already has ${count} local branches with no open PR that aren't merged into ${ref} (the cap is ${max}, set with git config workstation.maxBranches; a branch with an open PR doesn't count). Don't create another. Oldest first, with the days since each one's last commit; a stale one (${stale_days}+ days) is unlikely to hold work worth keeping:${nl}${counted}Delete a branch that is merged or superseded (check its tip is on main, and record the tip so it can be restored), or push one worth keeping and open a PR for it, or reuse an existing branch for this work. If the cap is too low for this project, tell the user rather than raising it yourself."
   fi
 }
 
