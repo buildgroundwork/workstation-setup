@@ -91,6 +91,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/block-shell-viewers.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/git-sprawl-guard.sh"
           }
         ]
       },

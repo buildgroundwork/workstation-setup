@@ -320,9 +320,18 @@ exposed to both. Separate worktrees make these structurally impossible instead o
 relying on discipline to avoid them.
 
 **Setup.**
-- One worktree per pair, outside the tracked tree — a sibling directory such as
-  `../<repo>-pair-N`, never nested under the repo root (that confuses tooling that
-  walks the tree).
+- One worktree per pair, at `<repo>/.claude/worktrees/pair-N`, so the project stays
+  self-contained and nothing lands in the workspace directory beside it. The repo
+  ignores `.claude/worktrees/` (`.git/info/exclude` works without touching a tracked
+  file), and its lint, format, and test tools must skip that directory too, or they
+  walk into each pair's copy of the tree.
+- A project has no more worktrees than pairs, plus one for the anchor. To verify a
+  commit, reuse the pair's own worktree, or one verification worktree, and run
+  `git checkout --detach <sha>` in it; never add a worktree per commit. Stale
+  worktrees, each with its own dependency trees, make the endpoint scanner churn.
+  The `git-sprawl-guard.sh` hook enforces both the location and the cap
+  (`git config workstation.maxWorktrees`, default 4), and caps a repo's local
+  branches not merged into `origin/main` (`workstation.maxBranches`, default 6).
 - One branch per pair. Git forbids two worktrees on the same branch outright; even if
   it didn't, sharing a branch would recreate the coupling one layer down.
 - Launch scripts `cd` to the pair's own worktree before starting the session, not the
